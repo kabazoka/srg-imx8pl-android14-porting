@@ -7,62 +7,86 @@ This repo tracks only the **modified files** — not the full Android source tre
 
 ## Directory Layout
 ```
-kernel/dts/           - Device tree modifications (based on imx8mp-evk.dts)
-uboot/board/          - U-Boot board files (DDR timing)
-uboot/configs/        - U-Boot config headers (memory layout, console)
-vendor-reference/     - Vendor-provided reference files (do not modify)
-porting_guide.md      - Detailed porting notes, progress, and troubleshooting
+uboot/
+├── evk/                      # EVK config (6GB DDR, UART2)
+│   ├── imx8mp_evk.h
+│   └── lpddr4_timing.c
+└── srg/                      # SRG config (4GB DDR, UART4)
+    ├── imx8mp_evk.h
+    └── lpddr4_timing.c
+flash-images/
+└── evk/                      # Pre-built images ready for flashing
+scripts/
+└── apply-platform.sh         # Switch between EVK/SRG configs
+vendor-reference/             # Original vendor files (reference only)
+porting_guide.md              # Detailed notes, progress, troubleshooting
 ```
 
-## Key Paths (Android Build Tree)
-- **Build root:** `/mnt/data/imx-android-14.0.0_2.2.0/android_build`
-- **U-Boot:** `vendor/nxp-opensource/uboot-imx/`
-- **Kernel DTS:** `vendor/nxp-opensource/kernel_imx/arch/arm64/boot/dts/freescale/`
-- **imx-mkimage:** `vendor/nxp-opensource/imx-mkimage/`
-- **Manifests:** `.repo/manifests/` (using `imx-android-14.0.0_2.2.0.xml`)
+## Hardware: EVK vs SRG
 
-## Hardware Specifics
-- **SoC:** NXP i.MX8M Plus
-- **DDR:** 4GB LPDDR4 (3GB + 1GB split at 4GB boundary)
-- **Console UART:** UART4 (`ttymxc3`) — differs from EVK's UART2
-- **RTC:** PCF85063ATL on I2C3 @ 0x51
-- **Base reference:** i.MX8MP EVK
+| Feature | EVK | SRG |
+|---------|-----|-----|
+| DDR | 6GB (3G+3G) | 4GB (3G+1G) |
+| Console UART | UART2 `ttymxc1` | UART4 `ttymxc3` |
+| Earlycon | `0x30890000` | `0x30A60000` |
+| External RTC | None | PCF85063 @ I2C3 |
 
-## Build Commands
+## Quick Commands
+
+### Switch Platform & Build
 ```bash
+# Apply EVK configuration
+~/srg-imx8pl-android14-porting/scripts/apply-platform.sh evk
+
+# Build bootloader
 cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
 source build/envsetup.sh
 lunch evk_8mp-trunk_staging-userdebug
 export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
-export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
 export CLANG_PATH=$(pwd)/prebuilts/clang/host/linux-x86
-export _JAVA_OPTIONS="-Xmx16g"
-./imx-make.sh -j$(nproc)
+./imx-make.sh bootloader -j$(nproc)
 ```
 
-## Applying Changes to Build Tree
-Copy modified files from this repo into the Android build tree before building:
+### Flash SD Card
 ```bash
-# DDR timing
-cp uboot/board/lpddr4_timing.c  <build>/vendor/nxp-opensource/uboot-imx/board/freescale/imx8mp_evk/
+cd ~/srg-imx8pl-android14-porting/flash-images/evk
+sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
+```
 
-# U-Boot header
-cp uboot/configs/imx8mp_evk.h   <build>/vendor/nxp-opensource/uboot-imx/include/configs/
+### Analyze Vendor WIC Image
+```bash
+# Decompress
+zstd -d image.rootfs.wic.zst -o wic.img
 
-# Kernel DTS
-cp kernel/dts/imx8mp-evk.dts    <build>/vendor/nxp-opensource/kernel_imx/arch/arm64/boot/dts/freescale/
+# Check console settings from U-Boot
+dd if=wic.img of=flash.bin bs=1k skip=32 count=1600
+strings flash.bin | grep "console="
+
+# Check DTB memory config
+OFFSET=$((16384 * 512))
+sudo mount -o loop,offset=$OFFSET,ro wic.img /mnt
+dtc -I dtb -O dts /mnt/imx8mp-evk.dtb | grep -A5 "memory@"
 ```
 
 ## Current Status
 - [x] RTC (PCF85063) added to device tree
-- [x] DDR switched to 4GB timing (vendor Yocto reference)
-- [x] First full build completed (flash.bin generated, tee.bin warning is non-fatal)
-- [ ] Flash and verify U-Boot on hardware
-- [ ] Verify DDR 4GB, UART4, RTC on hardware
-- [ ] Full Android boot test
-- [ ] TEE integration (Trusty or OP-TEE) for production
+- [x] Dual-platform config (EVK/SRG) created
+- [x] EVK bootloader built and images prepared
+- [x] WIC image analysis completed
+- [ ] **BLOCKING:** SRG DDR timing issue - vendor file may be for 8GB
+- [ ] Test EVK boot on EVK hardware
+- [ ] Obtain correct 4GB DDR timing from vendor
 
 ## Known Issues
-- **tee.bin missing warning:** Non-fatal. The non-Trusty manifest doesn't include OP-TEE. Safe to ignore for bring-up.
-- **Defconfig:** Use `imx8mp_evk_android_defconfig` (not the standalone U-Boot one).
-- **Lunch target:** Android 14 format is `evk_8mp-trunk_staging-userdebug`.
+
+| Issue | Impact | Action |
+|-------|--------|--------|
+| SRG DDR timing mismatch | Board won't boot | Request 4GB timing from vendor |
+| tee.bin missing | Non-fatal warning | Safe to ignore for bring-up |
+| GKI kernel overwrite | boot.img replaced | `cp boot-imx.img boot.img` |
+
+## Key Paths
+- **Build root:** `/mnt/data/imx-android-14.0.0_2.2.0/android_build`
+- **U-Boot:** `vendor/nxp-opensource/uboot-imx/`
+- **Kernel DTS:** `vendor/nxp-opensource/kernel_imx/arch/arm64/boot/dts/freescale/`
+- **imx-mkimage:** `vendor/nxp-opensource/imx-mkimage/`
