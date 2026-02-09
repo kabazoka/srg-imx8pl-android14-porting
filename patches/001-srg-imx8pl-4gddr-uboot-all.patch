@@ -1,0 +1,1132 @@
+diff --git a/arch/arm/dts/imx8mp-evk-u-boot.dtsi b/arch/arm/dts/imx8mp-evk-u-boot.dtsi
+index 203d05e66ea..f1371edf923 100644
+--- a/arch/arm/dts/imx8mp-evk-u-boot.dtsi
++++ b/arch/arm/dts/imx8mp-evk-u-boot.dtsi
+@@ -76,7 +76,7 @@
+ 	u-boot,off-on-delay-us = <20000>;
+ };
+ 
+-&pinctrl_uart2 {
++&pinctrl_uart4 {
+ 	u-boot,dm-spl;
+ };
+ 
+@@ -112,7 +112,8 @@
+ 	u-boot,dm-spl;
+ };
+ 
+-&uart2 {
++&uart4 {
++
+ 	u-boot,dm-spl;
+ };
+ 
+diff --git a/arch/arm/dts/imx8mp-evk.dts b/arch/arm/dts/imx8mp-evk.dts
+index 61e8a701961..cea351a2054 100644
+--- a/arch/arm/dts/imx8mp-evk.dts
++++ b/arch/arm/dts/imx8mp-evk.dts
+@@ -13,8 +13,8 @@
+ 	compatible = "fsl,imx8mp-evk", "fsl,imx8mp";
+ 
+ 	chosen {
+-		bootargs = "console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200";
+-		stdout-path = &uart2;
++		bootargs = "console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200";
++		stdout-path = &uart4;
+ 	};
+ 
+ 	gpio-leds {
+@@ -35,26 +35,27 @@
+ 		      <0x1 0x00000000 0 0xc0000000>;
+ 	};
+ 
+-	reg_can1_stby: regulator-can1-stby {
++	reg_usb1_host_vbus: regulator-usb1-vbus {
+ 		compatible = "regulator-fixed";
+-		regulator-name = "can1-stby";
++		regulator-name = "usb1_host_vbus";
+ 		pinctrl-names = "default";
+-		pinctrl-0 = <&pinctrl_flexcan1_reg>;
+-		regulator-min-microvolt = <3300000>;
+-		regulator-max-microvolt = <3300000>;
+-		gpio = <&gpio5 5 GPIO_ACTIVE_HIGH>;
+-		enable-active-high;
+-	};
+-
+-	reg_can2_stby: regulator-can2-stby {
++		pinctrl-0 = <&pinctrl_usb1_vbus>;
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpio = <&gpio1 05 GPIO_ACTIVE_HIGH>;
++		enable-active-low;
++		regulator-always-on;
++	};
++	reg_usb2_host_vbus: regulator-usb2-vbus {
+ 		compatible = "regulator-fixed";
+-		regulator-name = "can2-stby";
++		regulator-name = "usb2_host_vbus";
+ 		pinctrl-names = "default";
+-		pinctrl-0 = <&pinctrl_flexcan2_reg>;
+-		regulator-min-microvolt = <3300000>;
+-		regulator-max-microvolt = <3300000>;
+-		gpio = <&gpio4 27 GPIO_ACTIVE_HIGH>;
+-		enable-active-high;
++		pinctrl-0 = <&pinctrl_usb2_vbus>;
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpio = <&gpio1 06 GPIO_ACTIVE_HIGH>;
++		enable-active-low;
++		regulator-always-on;
+ 	};
+ 
+ 	reg_usdhc2_vmmc: regulator-usdhc2 {
+@@ -96,27 +97,29 @@
+ 		};
+ 	};
+ 
+-	cbtl04gp {
+-		compatible = "nxp,cbtl04gp";
++
++	/* TPM */
++	soft-spi {
++		compatible = "spi-gpio";
+ 		pinctrl-names = "default";
+-		pinctrl-0 = <&pinctrl_typec_mux>;
+-		switch-gpios = <&gpio4 20 GPIO_ACTIVE_LOW>;
+-		orientation-switch;
++		pinctrl-0 = <&pinctrl_ecspi2_gpio>;
++		cs-gpios = <&gpio5 13 0>;
++		gpio-sck = <&gpio5 10 0>;
++		gpio-mosi = <&gpio5 11 0>;
++		gpio-miso = <&gpio5 12 0>;
++		spi-delay-us = <1>;
++		#address-cells = <1>;
++		#size-cells = <0>;
+ 
+-		port {
+-			usb3_data_ss: endpoint {
+-				remote-endpoint = <&typec_con_ss>;
+-			};
+-		};
++		tpm2:npct750@0 {
++			reg = <0>;
++			compatible = "tis,tpm2-spi";
++			spi-max-frequency = <1000000>;
++			gpio-reset = <&gpio1 15 GPIO_ACTIVE_LOW>;
++ 		};
+ 	};
+ };
+ 
+-&flexcan1 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_flexcan1>;
+-	xceiver-supply = <&reg_can1_stby>;
+-	status = "okay";
+-};
+ 
+ &eqos {
+ 	pinctrl-names = "default";
+@@ -138,13 +141,6 @@
+ 	};
+ };
+ 
+-&flexcan2 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_flexcan2>;
+-	xceiver-supply = <&reg_can2_stby>;
+-	status = "disabled";/* can2 pin conflict with pdm */
+-};
+-
+ &fec {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&pinctrl_fec>;
+@@ -320,46 +316,6 @@
+ 			};
+ 		};
+ 	};
+-
+-	ptn5110: tcpc@50 {
+-		compatible = "nxp,ptn5110";
+-		pinctrl-names = "default";
+-		pinctrl-0 = <&pinctrl_typec>;
+-		reg = <0x50>;
+-		interrupt-parent = <&gpio4>;
+-		interrupts = <19 8>;
+-
+-		port {
+-			typec_dr_sw: endpoint {
+-				remote-endpoint = <&usb3_drd_sw>;
+-			};
+-		};
+-
+-		usb_con: connector {
+-			compatible = "usb-c-connector";
+-			label = "USB-C";
+-			power-role = "dual";
+-			data-role = "dual";
+-			try-power-role = "sink";
+-			source-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
+-			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
+-				     PDO_VAR(5000, 20000, 3000)>;
+-			op-sink-microwatt = <15000000>;
+-			self-powered;
+-
+-			ports {
+-				#address-cells = <1>;
+-				#size-cells = <0>;
+-
+-				port@1 {
+-					reg = <1>;
+-					typec_con_ss: endpoint {
+-						remote-endpoint = <&usb3_data_ss>;
+-					};
+-				};
+-			};
+-		};
+-	};
+ };
+ 
+ &i2c3 {
+@@ -371,12 +327,6 @@
+ 	sda-gpios = <&gpio5 19 GPIO_ACTIVE_HIGH>;
+ 	status = "okay";
+ 
+-	pca6416: gpio@20 {
+-		compatible = "ti,tca6416";
+-		reg = <0x20>;
+-		gpio-controller;
+-		#gpio-cells = <2>;
+-	};
+ };
+ 
+ &lcdif1 {
+@@ -403,21 +353,14 @@
+ 	status = "okay";
+ };
+ 
+-&uart2 {
++&uart4 {
+ 	/* console */
+ 	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_uart2>;
++	pinctrl-0 = <&pinctrl_uart4>;
+ 	status = "okay";
+ };
+ 
+ &usb3_phy0 {
+-	vbus-power-supply = <&ptn5110>;
+-	fsl,phy-tx-vref-tune = <0xe>;
+-	fsl,phy-tx-preemp-amp-tune = <3>;
+-	fsl,phy-tx-vboost-level = <5>;
+-	fsl,phy-comp-dis-tune = <7>;
+-	fsl,pcs-tx-deemph-3p5db = <0x21>;
+-	fsl,phy-pcs-tx-swing-full = <0x7f>;
+ 	status = "okay";
+ };
+ 
+@@ -426,24 +369,13 @@
+ };
+ 
+ &usb_dwc3_0 {
+-	dr_mode = "otg";
+-	hnp-disable;
+-	srp-disable;
+-	adp-disable;
+-	usb-role-switch;
+-	role-switch-default-mode = "none";
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_usb1_vbus>;
++	dr_mode = "host";
+ 	status = "okay";
+-
+-	port {
+-		usb3_drd_sw: endpoint {
+-			remote-endpoint = <&typec_dr_sw>;
+-		};
+-	};
+ };
+ 
+ &usb3_phy1 {
+-	fsl,phy-tx-preemp-amp-tune = <3>;
+-	fsl,phy-tx-vref-tune = <0xb>;
+ 	status = "okay";
+ };
+ 
+@@ -453,7 +385,7 @@
+ 
+ &usb_dwc3_1 {
+ 	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_usb1_vbus>;
++	pinctrl-0 = <&pinctrl_usb2_vbus>;
+ 	dr_mode = "host";
+ 	status = "okay";
+ };
+@@ -529,31 +461,6 @@
+ 		>;
+ 	};
+ 
+-	pinctrl_flexcan1: flexcan1grp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SPDIF_RX__CAN1_RX          0x154
+-			MX8MP_IOMUXC_SPDIF_TX__CAN1_TX          0x154
+-		>;
+-	};
+-
+-	pinctrl_flexcan2: flexcan2grp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SAI5_MCLK__CAN2_RX         0x154
+-			MX8MP_IOMUXC_SAI5_RXD3__CAN2_TX         0x154
+-		>;
+-	};
+-
+-	pinctrl_flexcan1_reg: flexcan1reggrp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SPDIF_EXT_CLK__GPIO5_IO05  0x154   /* CAN1_STBY */
+-		>;
+-	};
+-
+-	pinctrl_flexcan2_reg: flexcan2reggrp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SAI2_MCLK__GPIO4_IO27      0x154   /* CAN2_STBY */
+-		>;
+-	};
+ 
+ 	pinctrl_flexspi0: flexspi0grp {
+ 		fsl,pins = <
+@@ -626,17 +533,6 @@
+ 		>;
+ 	};
+ 
+-	pinctrl_typec: typec1grp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SAI1_TXD7__GPIO4_IO19	0x1c4
+-		>;
+-	};
+-
+-	pinctrl_typec_mux: typec1muxgrp {
+-		fsl,pins = <
+-			MX8MP_IOMUXC_SAI1_MCLK__GPIO4_IO20	0x16
+-		>;
+-	};
+ 
+ 	pinctrl_reg_usdhc2_vmmc: regusdhc2vmmc {
+ 		fsl,pins = <
+@@ -644,19 +540,27 @@
+ 		>;
+ 	};
+ 
+-	pinctrl_uart2: uart2grp {
++	pinctrl_uart4: uart4grp {
+ 		fsl,pins = <
+-			MX8MP_IOMUXC_UART2_RXD__UART2_DCE_RX	0x140
+-			MX8MP_IOMUXC_UART2_TXD__UART2_DCE_TX	0x140
++			MX8MP_IOMUXC_UART4_RXD__UART4_DCE_RX	0x140
++			MX8MP_IOMUXC_UART4_TXD__UART4_DCE_TX	0x140
++			
+ 		>;
+ 	};
+ 
++
+ 	pinctrl_usb1_vbus: usb1grp {
+ 		fsl,pins = <
+-			MX8MP_IOMUXC_GPIO1_IO14__USB2_OTG_PWR	0x19
++			MX8MP_IOMUXC_GPIO1_IO05__GPIO1_IO05	0x19
+ 		>;
+ 	};
+ 
++	pinctrl_usb2_vbus: usb2grp {
++		fsl,pins = <
++			MX8MP_IOMUXC_GPIO1_IO06__GPIO1_IO06	0x19
++ 		>;
++ 	};
++
+ 	pinctrl_usdhc2: usdhc2grp {
+ 		fsl,pins = <
+ 			MX8MP_IOMUXC_SD2_CLK__USDHC2_CLK	0x190
+@@ -752,4 +656,14 @@
+ 			MX8MP_IOMUXC_GPIO1_IO02__WDOG1_WDOG_B	0xc6
+ 		>;
+ 	};
++
++	pinctrl_ecspi2_gpio: ecspi2_gpio {
++		fsl,pins = <
++			MX8MP_IOMUXC_ECSPI2_SCLK__GPIO5_IO10	0x146
++			MX8MP_IOMUXC_ECSPI2_MOSI__GPIO5_IO11	0x146
++			MX8MP_IOMUXC_ECSPI2_MISO__GPIO5_IO12	0x146
++			MX8MP_IOMUXC_ECSPI2_SS0__GPIO5_IO13	0x146
++			MX8MP_IOMUXC_GPIO1_IO15__GPIO1_IO15	0x046
++		>;
++	};
+ };
+diff --git a/board/freescale/imx8mp_evk/imx8mp_evk.c b/board/freescale/imx8mp_evk/imx8mp_evk.c
+index c183dc9f4bb..6b57242155c 100644
+--- a/board/freescale/imx8mp_evk/imx8mp_evk.c
++++ b/board/freescale/imx8mp_evk/imx8mp_evk.c
+@@ -36,8 +36,8 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define WDOG_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_ODE | PAD_CTL_PUE | PAD_CTL_PE)
+ 
+ static iomux_v3_cfg_t const uart_pads[] = {
+-	MX8MP_PAD_UART2_RXD__UART2_DCE_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
+-	MX8MP_PAD_UART2_TXD__UART2_DCE_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
++	MX8MP_PAD_UART4_RXD__UART4_DCE_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
++	MX8MP_PAD_UART4_TXD__UART4_DCE_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
+ };
+ 
+ static iomux_v3_cfg_t const wdog_pads[] = {
+@@ -79,7 +79,7 @@ int board_early_init_f(void)
+ 
+ 	imx_iomux_v3_setup_multiple_pads(uart_pads, ARRAY_SIZE(uart_pads));
+ 
+-	init_uart_clk(1);
++	init_uart_clk(3);
+ 
+ 	return 0;
+ }
+diff --git a/board/freescale/imx8mp_evk/lpddr4_timing.c b/board/freescale/imx8mp_evk/lpddr4_timing.c
+index 8c5306d5d20..7f2076cf272 100644
+--- a/board/freescale/imx8mp_evk/lpddr4_timing.c
++++ b/board/freescale/imx8mp_evk/lpddr4_timing.c
+@@ -1,6 +1,14 @@
+-// SPDX-License-Identifier: GPL-2.0+
+ /*
+  * Copyright 2019 NXP
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Generated code from MX8M_DDR_tool
++ *
++ * Align with uboot version:
++ * imx_v2019.04_5.4.x and above version
++ * For imx_v2018.03_4.14.78_1.0.0_ga ~ imx_v2018.04_4.19.35_1.1.0_ga:
++ * please replace #include <asm/arch/ddr.h> with #include <asm/arch/imx8m_ddr.h>
+  */
+ 
+ #include <linux/kernel.h>
+@@ -11,69 +19,34 @@ struct dram_cfg_param ddr_ddrc_cfg[] = {
+ 	{ 0x3d400304, 0x1 },
+ 	{ 0x3d400030, 0x1 },
+ 	{ 0x3d400000, 0xa3080020 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x3d400020, 0x223 },
+-	{ 0x3d400024, 0x124f800 },
+-	{ 0x3d400064, 0x4900a8 },
+-	{ 0x3d400070, 0x1027f90 },
++	{ 0x3d400020, 0x1223 },
++	{ 0x3d400024, 0x16e3600 },
++	{ 0x3d400064, 0x5b00d2 },
++	{ 0x3d400070, 0x7027f90 },
+ 	{ 0x3d400074, 0x790 },
+-	{ 0x3d4000d0, 0xc0030495 },
+-	{ 0x3d4000d4, 0x770000 },
+-	{ 0x3d4000dc, 0xc40024 },
+-#else
+-	{ 0x3d400020, 0x1323 },
+-	{ 0x3d400024, 0x1e84800 },
+-	{ 0x3d400064, 0x7a017c },
+-#ifdef CONFIG_IMX8M_DRAM_INLINE_ECC
+-	{ 0x3d400070, 0x1027f54 },
+-#else
+-	{ 0x3d400070, 0x1027f10 },
+-#endif
+-	{ 0x3d400074, 0x7b0 },
+-	{ 0x3d4000d0, 0xc00307a3 },
+-	{ 0x3d4000d4, 0xc50000 },
+-	{ 0x3d4000dc, 0xf4003f },
+-#endif
+-	{ 0x3d4000e0, 0x330000 },
++	{ 0x3d4000d0, 0xc00305ba },
++	{ 0x3d4000d4, 0x940000 },
++	{ 0x3d4000dc, 0xd4002d },
++	{ 0x3d4000e0, 0x310000 },
+ 	{ 0x3d4000e8, 0x660048 },
+ 	{ 0x3d4000ec, 0x160048 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x3d400100, 0x1618141a },
+-	{ 0x3d400104, 0x504a6 },
+-	{ 0x3d40010c, 0x909000 },
+-	{ 0x3d400110, 0xb04060b },
+-	{ 0x3d400114, 0x2030909 },
+-	{ 0x3d400118, 0x1010006 },
+-	{ 0x3d40011c, 0x301 },
+-	{ 0x3d400130, 0x20500 },
+-	{ 0x3d400134, 0xb100002 },
+-	{ 0x3d400138, 0xad },
+-	{ 0x3d400144, 0x78003c },
+-	{ 0x3d400180, 0x2580012 },
+-	{ 0x3d400184, 0x1e0493e },
++	{ 0x3d400100, 0x191e1920 },
++	{ 0x3d400104, 0x60630 },
++	{ 0x3d40010c, 0xb0b000 },
++	{ 0x3d400110, 0xe04080e },
++	{ 0x3d400114, 0x2040c0c },
++	{ 0x3d400118, 0x1010007 },
++	{ 0x3d40011c, 0x401 },
++	{ 0x3d400130, 0x20600 },
++	{ 0x3d400134, 0xc100002 },
++	{ 0x3d400138, 0xd8 },
++	{ 0x3d400144, 0x96004b },
++	{ 0x3d400180, 0x2ee0017 },
++	{ 0x3d400184, 0x2605b8e },
+ 	{ 0x3d400188, 0x0 },
+-	{ 0x3d400190, 0x4938208 },
++	{ 0x3d400190, 0x497820a },
+ 	{ 0x3d400194, 0x80303 },
+-	{ 0x3d4001b4, 0x1308 },
+-#else
+-	{ 0x3d400100, 0x2028222a },
+-	{ 0x3d400104, 0x807bf },
+-	{ 0x3d40010c, 0xe0e000 },
+-	{ 0x3d400110, 0x12040a12 },
+-	{ 0x3d400114, 0x2050f0f },
+-	{ 0x3d400118, 0x1010009 },
+-	{ 0x3d40011c, 0x501 },
+-	{ 0x3d400130, 0x20800 },
+-	{ 0x3d400134, 0xe100002 },
+-	{ 0x3d400138, 0x184 },
+-	{ 0x3d400144, 0xc80064 },
+-	{ 0x3d400180, 0x3e8001e },
+-	{ 0x3d400184, 0x3207a12 },
+-	{ 0x3d400188, 0x0 },
+-	{ 0x3d400190, 0x49f820e },
+-	{ 0x3d400194, 0x80303 },
+-	{ 0x3d4001b4, 0x1f0e },
+-#endif
++	{ 0x3d4001b4, 0x170a },
+ 	{ 0x3d4001a0, 0xe0400018 },
+ 	{ 0x3d4001a4, 0xdf00e4 },
+ 	{ 0x3d4001a8, 0x80000000 },
+@@ -81,47 +54,14 @@ struct dram_cfg_param ddr_ddrc_cfg[] = {
+ 	{ 0x3d4001c0, 0x1 },
+ 	{ 0x3d4001c4, 0x1 },
+ 	{ 0x3d4000f4, 0xc99 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x3d400108, 0x60c1514 },
+-	{ 0x3d400200, 0x16 },
+-	{ 0x3d40020c, 0x0 },
+-	{ 0x3d400210, 0x1f1f },
+-	{ 0x3d400204, 0x80808 },
+-	{ 0x3d400214, 0x7070707 },
+-	{ 0x3d400218, 0x68070707 },
+-	{ 0x3d40021c, 0xf08 },
+-	{ 0x3d400250, 0x1f05 },
+-	{ 0x3d400254, 0x1f },
+-	{ 0x3d400264, 0x90003ff },
+-	{ 0x3d40026c, 0x20003ff },
+-	{ 0x3d400400, 0x111 },
+-	{ 0x3d400408, 0x72ff },
+-	{ 0x3d400494, 0x1000e00 },
+-	{ 0x3d400498, 0x3ff0000 },
+-	{ 0x3d40049c, 0x1000e00 },
+-	{ 0x3d4004a0, 0x3ff0000 },
+-	{ 0x3d402020, 0x21 },
+-	{ 0x3d402024, 0x30d400 },
+-	{ 0x3d402050, 0x20d000 },
+-	{ 0x3d402064, 0xc001c },
+-#else
+-	{ 0x3d400108, 0x9121c1c },
+-#ifdef CONFIG_IMX8M_DRAM_INLINE_ECC
+-	{ 0x3d400200, 0x13 },
+-	{ 0x3d40020c, 0x13131300 },
+-	{ 0x3d400210, 0x1f1f },
+-	{ 0x3d400204, 0x50505 },
+-	{ 0x3d400214, 0x4040404 },
+-	{ 0x3d400218, 0x68040404 },
+-#else
+-	{ 0x3d400200, 0x16 },
++	{ 0x3d400108, 0x70e1617 },
++	{ 0x3d400200, 0x17 },
+ 	{ 0x3d40020c, 0x0 },
+ 	{ 0x3d400210, 0x1f1f },
+ 	{ 0x3d400204, 0x80808 },
+ 	{ 0x3d400214, 0x7070707 },
+-	{ 0x3d400218, 0x68070707 },
+-#endif
+-	{ 0x3d40021c, 0xf08 },
++	{ 0x3d400218, 0x7070707 },
++	{ 0x3d40021c, 0xf0f },
+ 	{ 0x3d400250, 0x1705 },
+ 	{ 0x3d400254, 0x2c },
+ 	{ 0x3d40025c, 0x4000030 },
+@@ -137,8 +77,7 @@ struct dram_cfg_param ddr_ddrc_cfg[] = {
+ 	{ 0x3d402020, 0x1021 },
+ 	{ 0x3d402024, 0x30d400 },
+ 	{ 0x3d402050, 0x20d000 },
+-	{ 0x3d402064, 0xc0026 },
+-#endif
++	{ 0x3d402064, 0xc001c },
+ 	{ 0x3d4020dc, 0x840000 },
+ 	{ 0x3d4020e0, 0x330000 },
+ 	{ 0x3d4020e8, 0x660048 },
+@@ -153,24 +92,17 @@ struct dram_cfg_param ddr_ddrc_cfg[] = {
+ 	{ 0x3d40211c, 0x301 },
+ 	{ 0x3d402130, 0x20300 },
+ 	{ 0x3d402134, 0xa100002 },
+-	{ 0x3d402138, 0x27 },
++	{ 0x3d402138, 0x1d },
+ 	{ 0x3d402144, 0x14000a },
+ 	{ 0x3d402180, 0x640004 },
+ 	{ 0x3d402190, 0x3818200 },
+ 	{ 0x3d402194, 0x80303 },
+ 	{ 0x3d4021b4, 0x100 },
+ 	{ 0x3d4020f4, 0xc99 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x3d403020, 0x21 },
+-	{ 0x3d403024, 0xc3500 },
+-	{ 0x3d403050, 0x20d000 },
+-	{ 0x3d403064, 0x30007 },
+-#else
+ 	{ 0x3d403020, 0x1021 },
+ 	{ 0x3d403024, 0xc3500 },
+ 	{ 0x3d403050, 0x20d000 },
+-	{ 0x3d403064, 0x3000a },
+-#endif
++	{ 0x3d403064, 0x30007 },
+ 	{ 0x3d4030dc, 0x840000 },
+ 	{ 0x3d4030e0, 0x330000 },
+ 	{ 0x3d4030e8, 0x660048 },
+@@ -185,7 +117,7 @@ struct dram_cfg_param ddr_ddrc_cfg[] = {
+ 	{ 0x3d40311c, 0x301 },
+ 	{ 0x3d403130, 0x20300 },
+ 	{ 0x3d403134, 0xa100002 },
+-	{ 0x3d403138, 0xa },
++	{ 0x3d403138, 0x8 },
+ 	{ 0x3d403144, 0x50003 },
+ 	{ 0x3d403180, 0x190004 },
+ 	{ 0x3d403190, 0x3818200 },
+@@ -263,11 +195,7 @@ struct dram_cfg_param ddr_ddrphy_cfg[] = {
+ 	{ 0x7055, 0x1ff },
+ 	{ 0x8055, 0x1ff },
+ 	{ 0x9055, 0x1ff },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x200c5, 0xa },
+-#else
+-	{ 0x200c5, 0x18 },
+-#endif
++	{ 0x200c5, 0x19 },
+ 	{ 0x1200c5, 0x7 },
+ 	{ 0x2200c5, 0x7 },
+ 	{ 0x2002e, 0x2 },
+@@ -276,11 +204,11 @@ struct dram_cfg_param ddr_ddrphy_cfg[] = {
+ 	{ 0x90204, 0x0 },
+ 	{ 0x190204, 0x0 },
+ 	{ 0x290204, 0x0 },
+-	{ 0x20024, 0x1e3 },
++	{ 0x20024, 0x1a3 },
+ 	{ 0x2003a, 0x2 },
+-	{ 0x120024, 0x1e3 },
++	{ 0x120024, 0x1a3 },
+ 	{ 0x2003a, 0x2 },
+-	{ 0x220024, 0x1e3 },
++	{ 0x220024, 0x1a3 },
+ 	{ 0x2003a, 0x2 },
+ 	{ 0x20056, 0x3 },
+ 	{ 0x120056, 0x3 },
+@@ -346,11 +274,7 @@ struct dram_cfg_param ddr_ddrphy_cfg[] = {
+ 	{ 0x20018, 0x3 },
+ 	{ 0x20075, 0x4 },
+ 	{ 0x20050, 0x0 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x20008, 0x258 },
+-#else
+-	{ 0x20008, 0x3e8 },
+-#endif
++	{ 0x20008, 0x2ee },
+ 	{ 0x120008, 0x64 },
+ 	{ 0x220008, 0x19 },
+ 	{ 0x20088, 0x9 },
+@@ -1134,12 +1058,10 @@ struct dram_cfg_param ddr_ddrphy_trained_csr[] = {
+ 	{ 0x13730, 0x0 },
+ 	{ 0x13830, 0x0 },
+ };
+-
+ /* P0 message block paremeter for training firmware */
+ struct dram_cfg_param ddr_fsp0_cfg[] = {
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+ 	{ 0xd0000, 0x0 },
+-	{ 0x54003, 0x960 },
++	{ 0x54003, 0xbb8 },
+ 	{ 0x54004, 0x2 },
+ 	{ 0x54005, 0x2228 },
+ 	{ 0x54006, 0x14 },
+@@ -1148,58 +1070,26 @@ struct dram_cfg_param ddr_fsp0_cfg[] = {
+ 	{ 0x5400b, 0x2 },
+ 	{ 0x5400f, 0x100 },
+ 	{ 0x54012, 0x310 },
+-	{ 0x54019, 0x24c4 },
+-	{ 0x5401a, 0x33 },
++	{ 0x54019, 0x2dd4 },
++	{ 0x5401a, 0x31 },
+ 	{ 0x5401b, 0x4866 },
+ 	{ 0x5401c, 0x4800 },
+ 	{ 0x5401e, 0x16 },
+-	{ 0x5401f, 0x24c4 },
+-	{ 0x54020, 0x33 },
++	{ 0x5401f, 0x2dd4 },
++	{ 0x54020, 0x31 },
+ 	{ 0x54021, 0x4866 },
+ 	{ 0x54022, 0x4800 },
+ 	{ 0x54024, 0x16 },
+ 	{ 0x5402b, 0x1000 },
+ 	{ 0x5402c, 0x3 },
+-	{ 0x54032, 0xc400 },
+-	{ 0x54033, 0x3324 },
++	{ 0x54032, 0xd400 },
++	{ 0x54033, 0x312d },
+ 	{ 0x54034, 0x6600 },
+ 	{ 0x54035, 0x48 },
+ 	{ 0x54036, 0x48 },
+ 	{ 0x54037, 0x1600 },
+-	{ 0x54038, 0xc400 },
+-	{ 0x54039, 0x3324 },
+-#else
+-	{ 0xd0000, 0x0 },
+-	{ 0x54003, 0xfa0 },
+-	{ 0x54004, 0x2 },
+-	{ 0x54005, 0x2228 },
+-	{ 0x54006, 0x14 },
+-	{ 0x54008, 0x131f },
+-	{ 0x54009, 0xc8 },
+-	{ 0x5400b, 0x2 },
+-	{ 0x5400f, 0x100 },
+-	{ 0x54012, 0x310 },
+-	{ 0x54019, 0x3ff4 },
+-	{ 0x5401a, 0x33 },
+-	{ 0x5401b, 0x4866 },
+-	{ 0x5401c, 0x4800 },
+-	{ 0x5401e, 0x16 },
+-	{ 0x5401f, 0x3ff4 },
+-	{ 0x54020, 0x33 },
+-	{ 0x54021, 0x4866 },
+-	{ 0x54022, 0x4800 },
+-	{ 0x54024, 0x16 },
+-	{ 0x5402b, 0x1000 },
+-	{ 0x5402c, 0x3 },
+-	{ 0x54032, 0xf400 },
+-	{ 0x54033, 0x333f },
+-	{ 0x54034, 0x6600 },
+-	{ 0x54035, 0x48 },
+-	{ 0x54036, 0x48 },
+-	{ 0x54037, 0x1600 },
+-	{ 0x54038, 0xf400 },
+-	{ 0x54039, 0x333f },
+-#endif
++	{ 0x54038, 0xd400 },
++	{ 0x54039, 0x312d },
+ 	{ 0x5403a, 0x6600 },
+ 	{ 0x5403b, 0x48 },
+ 	{ 0x5403c, 0x48 },
+@@ -1207,6 +1097,7 @@ struct dram_cfg_param ddr_fsp0_cfg[] = {
+ 	{ 0xd0000, 0x1 },
+ };
+ 
++
+ /* P1 message block paremeter for training firmware */
+ struct dram_cfg_param ddr_fsp1_cfg[] = {
+ 	{ 0xd0000, 0x0 },
+@@ -1247,6 +1138,7 @@ struct dram_cfg_param ddr_fsp1_cfg[] = {
+ 	{ 0xd0000, 0x1 },
+ };
+ 
++
+ /* P2 message block paremeter for training firmware */
+ struct dram_cfg_param ddr_fsp2_cfg[] = {
+ 	{ 0xd0000, 0x0 },
+@@ -1287,11 +1179,11 @@ struct dram_cfg_param ddr_fsp2_cfg[] = {
+ 	{ 0xd0000, 0x1 },
+ };
+ 
++
+ /* P0 2D message block paremeter for training firmware */
+ struct dram_cfg_param ddr_fsp0_2d_cfg[] = {
+ 	{ 0xd0000, 0x0 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x54003, 0x960 },
++	{ 0x54003, 0xbb8 },
+ 	{ 0x54004, 0x2 },
+ 	{ 0x54005, 0x2228 },
+ 	{ 0x54006, 0x14 },
+@@ -1301,58 +1193,26 @@ struct dram_cfg_param ddr_fsp0_2d_cfg[] = {
+ 	{ 0x5400f, 0x100 },
+ 	{ 0x54010, 0x1f7f },
+ 	{ 0x54012, 0x310 },
+-	{ 0x54019, 0x24c4 },
+-	{ 0x5401a, 0x33 },
++	{ 0x54019, 0x2dd4 },
++	{ 0x5401a, 0x31 },
+ 	{ 0x5401b, 0x4866 },
+ 	{ 0x5401c, 0x4800 },
+ 	{ 0x5401e, 0x16 },
+-	{ 0x5401f, 0x24c4 },
+-	{ 0x54020, 0x33 },
+-	{ 0x54021, 0x4866 },
+-	{ 0x54022, 0x4800 },
+-	{ 0x54024, 0x16 },
+-	{ 0x5402b, 0x1000 },
+-	{ 0x5402c, 0x3 },
+-	{ 0x54032, 0xc400 },
+-	{ 0x54033, 0x3324 },
+-	{ 0x54034, 0x6600 },
+-	{ 0x54035, 0x48 },
+-	{ 0x54036, 0x48 },
+-	{ 0x54037, 0x1600 },
+-	{ 0x54038, 0xc400 },
+-	{ 0x54039, 0x3324 },
+-#else
+-	{ 0x54003, 0xfa0 },
+-	{ 0x54004, 0x2 },
+-	{ 0x54005, 0x2228 },
+-	{ 0x54006, 0x14 },
+-	{ 0x54008, 0x61 },
+-	{ 0x54009, 0xc8 },
+-	{ 0x5400b, 0x2 },
+-	{ 0x5400f, 0x100 },
+-	{ 0x54010, 0x1f7f },
+-	{ 0x54012, 0x310 },
+-	{ 0x54019, 0x3ff4 },
+-	{ 0x5401a, 0x33 },
+-	{ 0x5401b, 0x4866 },
+-	{ 0x5401c, 0x4800 },
+-	{ 0x5401e, 0x16 },
+-	{ 0x5401f, 0x3ff4 },
+-	{ 0x54020, 0x33 },
++	{ 0x5401f, 0x2dd4 },
++	{ 0x54020, 0x31 },
+ 	{ 0x54021, 0x4866 },
+ 	{ 0x54022, 0x4800 },
+ 	{ 0x54024, 0x16 },
+ 	{ 0x5402b, 0x1000 },
+ 	{ 0x5402c, 0x3 },
+-	{ 0x54032, 0xf400 },
+-	{ 0x54033, 0x333f },
++	{ 0x54032, 0xd400 },
++	{ 0x54033, 0x312d },
+ 	{ 0x54034, 0x6600 },
+ 	{ 0x54035, 0x48 },
+ 	{ 0x54036, 0x48 },
+ 	{ 0x54037, 0x1600 },
+-	{ 0x54038, 0xf400 },
+-	{ 0x54039, 0x333f },
+-#endif
++	{ 0x54038, 0xd400 },
++	{ 0x54039, 0x312d },
+ 	{ 0x5403a, 0x6600 },
+ 	{ 0x5403b, 0x48 },
+ 	{ 0x5403c, 0x48 },
+@@ -1841,22 +1701,16 @@ struct dram_cfg_param ddr_phy_pie[] = {
+ 	{ 0x400d6, 0x20a },
+ 	{ 0x400d7, 0x20b },
+ 	{ 0x2003a, 0x2 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x2000b, 0x4b },
+-	{ 0x2000c, 0x96 },
+-	{ 0x2000d, 0x5dc },
+-#else
+ 	{ 0x200be, 0x3 },
+-	{ 0x2000b, 0x7d },
+-	{ 0x2000c, 0xfa },
+-	{ 0x2000d, 0x9c4 },
+-#endif
++	{ 0x2000b, 0x34b },
++	{ 0x2000c, 0xbb },
++	{ 0x2000d, 0x753 },
+ 	{ 0x2000e, 0x2c },
+-	{ 0x12000b, 0xc },
++	{ 0x12000b, 0x70 },
+ 	{ 0x12000c, 0x19 },
+ 	{ 0x12000d, 0xfa },
+ 	{ 0x12000e, 0x10 },
+-	{ 0x22000b, 0x3 },
++	{ 0x22000b, 0x1c },
+ 	{ 0x22000c, 0x6 },
+ 	{ 0x22000d, 0x3e },
+ 	{ 0x22000e, 0x10 },
+@@ -1870,12 +1724,6 @@ struct dram_cfg_param ddr_phy_pie[] = {
+ 	{ 0x90013, 0x6152 },
+ 	{ 0x20010, 0x5a },
+ 	{ 0x20011, 0x3 },
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	{ 0x120010, 0x5a },
+-	{ 0x120011, 0x3 },
+-	{ 0x220010, 0x5a },
+-	{ 0x220011, 0x3 },
+-#endif
+ 	{ 0x40080, 0xe0 },
+ 	{ 0x40081, 0x12 },
+ 	{ 0x40082, 0xe0 },
+@@ -1959,13 +1807,8 @@ struct dram_cfg_param ddr_phy_pie[] = {
+ 
+ struct dram_fsp_msg ddr_dram_fsp_msg[] = {
+ 	{
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-		/* P0 2400mts 1D */
+-		.drate = 2400,
+-#else
+-		/* P0 4000mts 1D */
+-		.drate = 4000,
+-#endif
++		/* P0 3000mts 1D */
++		.drate = 3000,
+ 		.fw_type = FW_1D_IMAGE,
+ 		.fsp_cfg = ddr_fsp0_cfg,
+ 		.fsp_cfg_num = ARRAY_SIZE(ddr_fsp0_cfg),
+@@ -1985,13 +1828,8 @@ struct dram_fsp_msg ddr_dram_fsp_msg[] = {
+ 		.fsp_cfg_num = ARRAY_SIZE(ddr_fsp2_cfg),
+ 	},
+ 	{
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-		/* P0 2400mts 2D */
+-		.drate = 2400,
+-#else
+-		/* P0 4000mts 2D */
+-		.drate = 4000,
+-#endif
++		/* P0 3000mts 2D */
++		.drate = 3000,
+ 		.fw_type = FW_2D_IMAGE,
+ 		.fsp_cfg = ddr_fsp0_2d_cfg,
+ 		.fsp_cfg_num = ARRAY_SIZE(ddr_fsp0_2d_cfg),
+@@ -2010,39 +1848,6 @@ struct dram_timing_info dram_timing = {
+ 	.ddrphy_trained_csr_num = ARRAY_SIZE(ddr_ddrphy_trained_csr),
+ 	.ddrphy_pie = ddr_phy_pie,
+ 	.ddrphy_pie_num = ARRAY_SIZE(ddr_phy_pie),
+-#ifdef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-	.fsp_table = { 2400, 400, 100, },
+-#else
+-	.fsp_table = { 4000, 400, 100, },
+-#endif
++	.fsp_table = { 3000, 400, 100, },
+ };
+ 
+-#ifndef CONFIG_IMX8M_LPDDR4_FREQ0_2400MTS
+-#ifdef CONFIG_IMX8M_DRAM_INLINE_ECC
+-void board_dram_ecc_scrub(void)
+-{
+-	ddrc_inline_ecc_scrub(0x0, 0x3ffffff);
+-	ddrc_inline_ecc_scrub(0x20000000, 0x23ffffff);
+-	ddrc_inline_ecc_scrub(0x40000000, 0x43ffffff);
+-	ddrc_inline_ecc_scrub(0x4000000, 0x7ffffff);
+-	ddrc_inline_ecc_scrub(0x24000000, 0x27ffffff);
+-	ddrc_inline_ecc_scrub(0x44000000, 0x47ffffff);
+-	ddrc_inline_ecc_scrub(0x8000000, 0xbffffff);
+-	ddrc_inline_ecc_scrub(0x28000000, 0x2bffffff);
+-	ddrc_inline_ecc_scrub(0x48000000, 0x4bffffff);
+-	ddrc_inline_ecc_scrub(0xc000000, 0xfffffff);
+-	ddrc_inline_ecc_scrub(0x2c000000, 0x2fffffff);
+-	ddrc_inline_ecc_scrub(0x4c000000, 0x4fffffff);
+-	ddrc_inline_ecc_scrub(0x10000000, 0x13ffffff);
+-	ddrc_inline_ecc_scrub(0x30000000, 0x33ffffff);
+-	ddrc_inline_ecc_scrub(0x50000000, 0x53ffffff);
+-	ddrc_inline_ecc_scrub(0x14000000, 0x17ffffff);
+-	ddrc_inline_ecc_scrub(0x34000000, 0x37ffffff);
+-	ddrc_inline_ecc_scrub(0x54000000, 0x57ffffff);
+-	ddrc_inline_ecc_scrub(0x18000000, 0x1bffffff);
+-	ddrc_inline_ecc_scrub(0x38000000, 0x3bffffff);
+-	ddrc_inline_ecc_scrub(0x58000000, 0x5bffffff);
+-	ddrc_inline_ecc_scrub_end(0x0, 0x5fffffff);
+-}
+-#endif
+-#endif
+diff --git a/configs/imx8mp_evk_defconfig b/configs/imx8mp_evk_defconfig
+index 2dc3ebc5b97..2a1b41313ad 100644
+--- a/configs/imx8mp_evk_defconfig
++++ b/configs/imx8mp_evk_defconfig
+@@ -12,29 +12,26 @@ CONFIG_SYS_MEMTEST_END=0xC0000000
+ CONFIG_ENV_SIZE=0x4000
+ CONFIG_ENV_OFFSET=0x400000
+ CONFIG_ENV_SECT_SIZE=0x10000
+-CONFIG_SYS_I2C_MXC_I2C1=y
+-CONFIG_SYS_I2C_MXC_I2C2=y
+-CONFIG_SYS_I2C_MXC_I2C3=y
+ CONFIG_DM_GPIO=y
++CONFIG_DEFAULT_DEVICE_TREE="imx8mp-evk"
+ CONFIG_SPL_TEXT_BASE=0x920000
+-CONFIG_USB_TCPC=y
+ CONFIG_TARGET_IMX8MP_EVK=y
+ CONFIG_SPL_SERIAL=y
+ CONFIG_SPL_DRIVERS_MISC=y
+ CONFIG_SPL=y
+ CONFIG_SPL_IMX_ROMAPI_LOADADDR=0x48000000
+-CONFIG_DEFAULT_DEVICE_TREE="imx8mp-evk"
++CONFIG_OF_BOARD_FIXUP=y
+ CONFIG_DISTRO_DEFAULTS=y
+ CONFIG_SYS_LOAD_ADDR=0x40400000
+-CONFIG_BOOTCOMMAND="run distro_bootcmd;run bsp_bootcmd"
+ CONFIG_FIT=y
+ CONFIG_FIT_EXTERNAL_OFFSET=0x3000
++CONFIG_FIT_SIGNATURE=y
+ CONFIG_SPL_LOAD_FIT=y
+-CONFIG_OF_BOARD_FIXUP=y
++CONFIG_LEGACY_IMAGE_FORMAT=y
+ CONFIG_OF_BOARD_SETUP=y
+ CONFIG_OF_SYSTEM_SETUP=y
++CONFIG_BOOTCOMMAND="run distro_bootcmd;run bsp_bootcmd"
+ CONFIG_DEFAULT_FDT_FILE="imx8mp-evk.dtb"
+-CONFIG_ARCH_MISC_INIT=y
+ CONFIG_BOARD_EARLY_INIT_F=y
+ CONFIG_BOARD_LATE_INIT=y
+ CONFIG_SPL_BOARD_INIT=y
+@@ -51,7 +48,6 @@ CONFIG_SYS_PROMPT="u-boot=> "
+ # CONFIG_CMD_IMPORTENV is not set
+ CONFIG_CMD_ERASEENV=y
+ CONFIG_CMD_NVEDIT_EFI=y
+-CONFIG_CMD_CRC32=y
+ CONFIG_CRC32_VERIFY=y
+ CONFIG_CMD_MEMTEST=y
+ CONFIG_CMD_CLK=y
+@@ -60,6 +56,7 @@ CONFIG_CMD_FUSE=y
+ CONFIG_CMD_GPIO=y
+ CONFIG_CMD_I2C=y
+ CONFIG_CMD_MMC=y
++CONFIG_CMD_OPTEE_RPMB=y
+ CONFIG_CMD_POWEROFF=y
+ CONFIG_CMD_USB=y
+ CONFIG_CMD_USB_MASS_STORAGE=y
+@@ -73,7 +70,6 @@ CONFIG_CMD_GETTIME=y
+ CONFIG_CMD_TIMER=y
+ CONFIG_CMD_REGULATOR=y
+ CONFIG_CMD_EXT4_WRITE=y
+-CONFIG_CMD_LED=y
+ CONFIG_OF_CONTROL=y
+ CONFIG_SPL_OF_CONTROL=y
+ CONFIG_ENV_OVERWRITE=y
+@@ -102,10 +98,8 @@ CONFIG_FASTBOOT_FLASH=y
+ CONFIG_MXC_GPIO=y
+ CONFIG_DM_PCA953X=y
+ CONFIG_DM_I2C=y
+-CONFIG_SYS_I2C_MXC=y
+ CONFIG_LED=y
+ CONFIG_LED_GPIO=y
+-CONFIG_DM_MMC=y
+ CONFIG_SUPPORT_EMMC_RPMB=y
+ CONFIG_SUPPORT_EMMC_BOOT=y
+ CONFIG_MMC_IO_VOLTAGE=y
+@@ -122,12 +116,12 @@ CONFIG_PHY_REALTEK=y
+ CONFIG_DM_ETH=y
+ CONFIG_DM_ETH_PHY=y
+ CONFIG_PHY_GIGE=y
+-CONFIG_PHY=y
+-CONFIG_PHY_IMX8MQ_USB=y
+ CONFIG_DWC_ETH_QOS=y
+ CONFIG_DWC_ETH_QOS_IMX=y
+ CONFIG_FEC_MXC=y
+ CONFIG_MII=y
++CONFIG_PHY=y
++CONFIG_PHY_IMX8MQ_USB=y
+ CONFIG_PINCTRL=y
+ CONFIG_SPL_PINCTRL=y
+ CONFIG_PINCTRL_IMX8M=y
+@@ -144,10 +138,11 @@ CONFIG_DM_SPI=y
+ CONFIG_NXP_FSPI=y
+ CONFIG_SYSRESET=y
+ CONFIG_SYSRESET_PSCI=y
++CONFIG_TEE=y
++CONFIG_OPTEE=y
+ CONFIG_DM_THERMAL=y
+ CONFIG_IMX_TMU=y
+ CONFIG_USB=y
+-CONFIG_DM_USB=y
+ CONFIG_USB_XHCI_HCD=y
+ CONFIG_USB_XHCI_DWC3=y
+ CONFIG_USB_DWC3=y
+@@ -156,9 +151,6 @@ CONFIG_USB_GADGET_MANUFACTURER="FSL"
+ CONFIG_USB_GADGET_VENDOR_NUM=0x1fc9
+ CONFIG_USB_GADGET_PRODUCT_NUM=0x0152
+ CONFIG_DM_VIDEO=y
+-CONFIG_BMP_16BPP=y
+-CONFIG_BMP_24BPP=y
+-CONFIG_BMP_32BPP=y
+ CONFIG_VIDEO_LOGO=y
+ CONFIG_SYS_WHITE_ON_BLACK=y
+ CONFIG_VIDEO_LCD_RAYDIUM_RM67191=y
+@@ -166,25 +158,21 @@ CONFIG_VIDEO_IMX_SEC_DSI=y
+ CONFIG_VIDEO_IMX_LCDIFV3=y
+ CONFIG_SPLASH_SCREEN=y
+ CONFIG_SPLASH_SCREEN_ALIGN=y
++CONFIG_BMP_16BPP=y
++CONFIG_BMP_24BPP=y
++CONFIG_BMP_32BPP=y
+ CONFIG_VIDEO_ADV7535=y
+-CONFIG_LEGACY_IMAGE_FORMAT=y
++CONFIG_SPL_RSA=y
++CONFIG_SHA384=y
+ CONFIG_LZO=y
+ CONFIG_BZIP2=y
+ CONFIG_OF_LIBFDT_OVERLAY=y
++CONFIG_EFI_MM_COMM_TEE=y
++CONFIG_EFI_VAR_BUF_SIZE=139264
+ CONFIG_EFI_SET_TIME=y
+ CONFIG_EFI_RUNTIME_UPDATE_CAPSULE=y
+ CONFIG_EFI_CAPSULE_ON_DISK=y
+-CONFIG_EFI_CAPSULE_FIRMWARE_RAW=y
+-CONFIG_EFI_SECURE_BOOT=y
+-CONFIG_SPL_RSA=y
+-CONFIG_SHA384=y
+-CONFIG_EFI_VAR_BUF_SIZE=139264
+ CONFIG_EFI_IGNORE_OSINDICATIONS=y
++CONFIG_EFI_CAPSULE_FIRMWARE_RAW=y
+ CONFIG_EFI_CAPSULE_AUTHENTICATE=y
+-CONFIG_OPTEE=y
+-CONFIG_CMD_OPTEE_RPMB=y
+-CONFIG_EFI_MM_COMM_TEE=y
+-CONFIG_TEE=y
+-CONFIG_EFI_ESRT=y
+-CONFIG_EFI_HAVE_CAPSULE_UPDATE=y
+-CONFIG_FIT_SIGNATURE=y
++CONFIG_EFI_SECURE_BOOT=y
+diff --git a/include/configs/imx8mp_evk.h b/include/configs/imx8mp_evk.h
+index a26c651dcf5..449b854665a 100644
+--- a/include/configs/imx8mp_evk.h
++++ b/include/configs/imx8mp_evk.h
+@@ -61,9 +61,8 @@
+ 
+ #ifdef CONFIG_DISTRO_DEFAULTS
+ #define BOOT_TARGET_DEVICES(func) \
+-	func(USB, usb, 0) \
+ 	func(MMC, mmc, 1) \
+-	func(MMC, mmc, 2)
++
+ 
+ #include <config_distro_bootcmd.h>
+ #else
+@@ -103,8 +102,8 @@
+ 	"fdt_addr=0x43000000\0"			\
+ 	"fdt_high=0xffffffffffffffff\0" \
+ 	"mtdparts=" MFG_NAND_PARTITION "\0" \
+-	"console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200\0" \
+-	"bootargs=console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200 ubi.mtd=nandrootfs "  \
++	"console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200\0" \
++	"bootargs=console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200 ubi.mtd=nandrootfs "  \
+ 		"root=ubi0:nandrootfs rootfstype=ubifs "		     \
+ 		MFG_NAND_PARTITION \
+ 		"\0" \
+@@ -123,7 +122,7 @@
+ 	"bsp_script=boot.scr\0" \
+ 	"image=Image\0" \
+ 	"splashimage=0x50000000\0" \
+-	"console=ttymxc1,115200\0" \
++	"console=ttymxc3,115200\0" \
+ 	"fdt_addr_r=0x43000000\0"			\
+ 	"fdt_addr=0x43000000\0"			\
+ 	"boot_fdt=try\0" \
+@@ -196,7 +195,7 @@
+ 
+ #define CONFIG_MMCROOT			"/dev/mmcblk1p2"  /* USDHC2 */
+ 
+-/* Totally 6GB DDR */
++/* Totally 4GB DDR */
+ #define CONFIG_SYS_SDRAM_BASE		0x40000000
+ #define PHYS_SDRAM			0x40000000
+ #define PHYS_SDRAM_SIZE			0xC0000000	/* 3 GB */
+@@ -204,10 +203,10 @@
+ #ifdef CONFIG_TARGET_IMX8MP_DDR4_EVK
+ #define PHYS_SDRAM_2_SIZE		0x40000000	/* 1 GB */
+ #else
+-#define PHYS_SDRAM_2_SIZE		0xC0000000	/* 3 GB */
++#define PHYS_SDRAM_2_SIZE		0x40000000	/* 1 GB */
+ #endif
+ 
+-#define CONFIG_MXC_UART_BASE		UART2_BASE_ADDR
++#define CONFIG_MXC_UART_BASE		UART4_BASE_ADDR
+ 
+ /* Monitor Command Prompt */
+ #define CONFIG_SYS_CBSIZE		2048
