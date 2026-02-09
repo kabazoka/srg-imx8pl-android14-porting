@@ -34,6 +34,11 @@ vendor-reference/             # Original vendor files
 
 ## Quick Commands
 
+> [!IMPORTANT]
+> **ALWAYS** use the following wrapper scripts/tools when available. They handle environment setup and arguments correctly.
+> - **Build:** `./imx-make.sh` (instead of `make`)
+> - **Flash:** `./imx-sdcard-partition.sh` (instead of `dd` or other tools)
+
 ### Switch Platform & Build
 ```bash
 # Apply SRG configuration

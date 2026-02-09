@@ -144,6 +144,24 @@ strings flash-extract.bin | grep -E "console=|ttymxc"
 
 ---
 
+## Task 3: Kernel USB Configuration (Resolved)
+
+### Problem
+Target SRG board uses Type-A USB Host ports, while EVK defaults to Type-C/OTG with `ptn5110` controller. This mismatch caused USB failure and potential boot issues.
+
+### Solution
+Modified `imx8mp-evk.dts` (Kernel 6.6) to:
+1.  **Add Regulators**: Added `reg_usb1_vbus` and `reg_usb2_vbus` (GPIO1_05/06).
+2.  **Force Host Mode**: Set `dr_mode = "host"` and `vbus-supply` directly on `&usb_dwc3_0` and `&usb_dwc3_1`.
+3.  **Disable Type-C**: Disabled `ptn5110` (Type-C Controller) and `cbtl04gp` (Switch) to fix build errors caused by broken references to OTG endpoints.
+
+### Applied Changes (`imx8mp-evk.dts`)
+-   Nodes added: `reg_usb1_vbus`, `reg_usb2_vbus`, `pinctrl_usb1_vbus`, `pinctrl_usb2_vbus`
+-   Nodes disabled: `ptn5110`, `cbtl04gp`
+-   Nodes modified: `&usb_dwc3_0`, `&usb_dwc3_1` (Host mode)
+
+---
+
 ## Build & Flash Workflow
 
 ### Environment Setup
@@ -153,14 +171,18 @@ source build/envsetup.sh
 lunch evk_8mp-trunk_staging-userdebug
 ```
 
-### Build Bootloader
-```bash
-./imx-make.sh bootloader -j$(nproc)
-```
+### Build Components
+-   **U-Boot**: `./imx-make.sh bootloader -j$(nproc)`
+-   **Kernel (boot.img)**: 
+    ```bash
+    ./imx-make.sh kernel -j$(nproc)  # Compiles kernel/dtb
+    make bootimage -j$(nproc)        # PCKS boot.img (Essential!)
+    ```
 
 ### Flash to SD Card (SRG)
 ```bash
 cd ~/srg-imx8pl-android14-porting/flash-images/srg
+# Ensure boot.img is updated
 sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 ```
 
@@ -171,16 +193,16 @@ sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 | Issue | Status | Notes |
 |-------|--------|-------|
 | tee.bin missing | Non-fatal | Non-Trusty manifest, safe for bring-up |
-| GKI kernel overwrite | Workarounded | Copy boot-imx.img → boot.img |
+| GKI kernel overwrite | **RESOLVED** | Manually repacked `boot.img` with custom kernel |
 | SRG DDR timing | **RESOLVED** | Applied official 4GB patch |
-| USB Functionality | Pending | Kernel patch available (`001-srg-imx8pl-kernel-all.patch`) if needed |
+| USB Functionality | **PATCHED** | Regulators added, Host mode forced, Type-C disabled |
 
 ---
 
 ## Next Steps
 
 - [x] Obtain correct 4GB DDR timing (Found in meta-aaeon-nxp)
+- [x] Apply Kernel USB fixes (Host mode, VBUS)
 - [ ] Flash and Boot Test on SRG hardware
 - [ ] Verify DDR detection (4GB)
-- [ ] Verify RTC
-- [ ] Check USB functionality (Apply kernel patch if needed)
+- [ ] Verify USB functionality (Mouse/Keyboard)
