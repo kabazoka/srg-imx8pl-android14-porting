@@ -1,0 +1,23 @@
+diff --git a/arch/arm/dts/imx8mp-evk-u-boot.dtsi b/arch/arm/dts/imx8mp-evk-u-boot.dtsi
+index 203d05e66ea..f1371edf923 100644
+--- a/arch/arm/dts/imx8mp-evk-u-boot.dtsi
++++ b/arch/arm/dts/imx8mp-evk-u-boot.dtsi
+@@ -76,7 +76,7 @@
+ 	u-boot,off-on-delay-us = <20000>;
+ };
+ 
+-&pinctrl_uart2 {
++&pinctrl_uart4 {
+ 	u-boot,dm-spl;
+ };
+ 
+@@ -112,7 +112,8 @@
+ 	u-boot,dm-spl;
+ };
+ 
+-&uart2 {
++&uart4 {
++
+ 	u-boot,dm-spl;
+ };
+ 

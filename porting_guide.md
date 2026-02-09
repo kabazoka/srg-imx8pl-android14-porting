@@ -155,10 +155,17 @@ Modified `imx8mp-evk.dts` (Kernel 6.6) to:
 2.  **Force Host Mode**: Set `dr_mode = "host"` and `vbus-supply` directly on `&usb_dwc3_0` and `&usb_dwc3_1`.
 3.  **Disable Type-C**: Disabled `ptn5110` (Type-C Controller) and `cbtl04gp` (Switch) to fix build errors caused by broken references to OTG endpoints.
 
+### Kernel Console Fix (UART4)
+**Problem:** `imx8mp-evk.dts` default console is UART2 (`ttymxc1`), but SRG uses UART4 (`ttymxc3`).
+**Solution:**
+1.  **Enable UART4**: Added `&uart4` node with `status = "okay"` and `pinctrl-0 = <&pinctrl_uart4>`.
+2.  **Define Pins**: Added `pinctrl_uart4` with `MX8MP_IOMUXC_UART4_RXD__UART4_DCE_RX` and `MX8MP_IOMUXC_UART4_TXD__UART4_DCE_TX` (0x140).
+3.  **Redirect Output**: Updated `chosen` node to `stdout-path = &uart4`.
+
 ### Applied Changes (`imx8mp-evk.dts`)
--   Nodes added: `reg_usb1_vbus`, `reg_usb2_vbus`, `pinctrl_usb1_vbus`, `pinctrl_usb2_vbus`
+-   Nodes added: `reg_usb1_vbus`, `reg_usb2_vbus`, `pinctrl_usb1_vbus`, `pinctrl_usb2_vbus`, `pinctrl_uart4`
 -   Nodes disabled: `ptn5110`, `cbtl04gp`
--   Nodes modified: `&usb_dwc3_0`, `&usb_dwc3_1` (Host mode)
+-   Nodes modified: `&usb_dwc3_0`, `&usb_dwc3_1` (Host mode), `chosen` (stdout-path), `&uart4` (enabled)
 
 ---
 
@@ -193,7 +200,7 @@ sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 | Issue | Status | Notes |
 |-------|--------|-------|
 | tee.bin missing | Non-fatal | Non-Trusty manifest, safe for bring-up |
-| GKI kernel overwrite | **RESOLVED** | Manually repacked `boot.img` with custom kernel |
+| GKI kernel overwrite | **RESOLVED** | Disabled in `imx-make.sh` (`enable_gki=0`) |
 | SRG DDR timing | **RESOLVED** | Applied official 4GB patch |
 | USB Functionality | **PATCHED** | Regulators added, Host mode forced, Type-C disabled |
 

@@ -1,0 +1,57 @@
+diff --git a/include/configs/imx8mp_evk.h b/include/configs/imx8mp_evk.h
+index a26c651dcf5..449b854665a 100644
+--- a/include/configs/imx8mp_evk.h
++++ b/include/configs/imx8mp_evk.h
+@@ -61,9 +61,8 @@
+ 
+ #ifdef CONFIG_DISTRO_DEFAULTS
+ #define BOOT_TARGET_DEVICES(func) \
+-	func(USB, usb, 0) \
+ 	func(MMC, mmc, 1) \
+-	func(MMC, mmc, 2)
++
+ 
+ #include <config_distro_bootcmd.h>
+ #else
+@@ -103,8 +102,8 @@
+ 	"fdt_addr=0x43000000\0"			\
+ 	"fdt_high=0xffffffffffffffff\0" \
+ 	"mtdparts=" MFG_NAND_PARTITION "\0" \
+-	"console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200\0" \
+-	"bootargs=console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200 ubi.mtd=nandrootfs "  \
++	"console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200\0" \
++	"bootargs=console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200 ubi.mtd=nandrootfs "  \
+ 		"root=ubi0:nandrootfs rootfstype=ubifs "		     \
+ 		MFG_NAND_PARTITION \
+ 		"\0" \
+@@ -123,7 +122,7 @@
+ 	"bsp_script=boot.scr\0" \
+ 	"image=Image\0" \
+ 	"splashimage=0x50000000\0" \
+-	"console=ttymxc1,115200\0" \
++	"console=ttymxc3,115200\0" \
+ 	"fdt_addr_r=0x43000000\0"			\
+ 	"fdt_addr=0x43000000\0"			\
+ 	"boot_fdt=try\0" \
+@@ -196,7 +195,7 @@
+ 
+ #define CONFIG_MMCROOT			"/dev/mmcblk1p2"  /* USDHC2 */
+ 
+-/* Totally 6GB DDR */
++/* Totally 4GB DDR */
+ #define CONFIG_SYS_SDRAM_BASE		0x40000000
+ #define PHYS_SDRAM			0x40000000
+ #define PHYS_SDRAM_SIZE			0xC0000000	/* 3 GB */
+@@ -204,10 +203,10 @@
+ #ifdef CONFIG_TARGET_IMX8MP_DDR4_EVK
+ #define PHYS_SDRAM_2_SIZE		0x40000000	/* 1 GB */
+ #else
+-#define PHYS_SDRAM_2_SIZE		0xC0000000	/* 3 GB */
++#define PHYS_SDRAM_2_SIZE		0x40000000	/* 1 GB */
+ #endif
+ 
+-#define CONFIG_MXC_UART_BASE		UART2_BASE_ADDR
++#define CONFIG_MXC_UART_BASE		UART4_BASE_ADDR
+ 
+ /* Monitor Command Prompt */
+ #define CONFIG_SYS_CBSIZE		2048
