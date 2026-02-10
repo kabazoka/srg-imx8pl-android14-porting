@@ -1,12 +1,12 @@
 # SRG-iMX8PL Android 14 Porting Notes
 
-**Date:** 2026-02-05 (Updated: 2026-02-09)
+**Date:** 2026-02-05 (Updated: 2026-02-10)
 **Platform:** SRG-iMX8PL (based on NXP i.MX8MP EVK)
 **OS:** Android 14
 
 ## Overview
 
-This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, and debugging the boot freeze issue.
+This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, USB host-mode fix, console UART4 fix, and U-Boot Android boot flow fix.
 
 ## Hardware Differences: EVK vs SRG
 
@@ -32,12 +32,17 @@ A dual-platform build system was established to support both EVK and SRG boards 
 │   │   └── lpddr4_timing.c
 │   └── srg/                  # SRG: 4GB DDR, UART4
 │       ├── imx8mp_evk.h
-│       └── lpddr4_timing.c
+│       ├── lpddr4_timing.c
+│       └── imx8mp_evk_android_defconfig  # Boot command fix
+├── overlay/                  # Modified Android source files
+│   └── android_build/
+│       ├── imx-make.sh                   # GKI disabled
+│       └── vendor/.../imx8mp-evk.dts     # USB + UART4 fix
 ├── flash-images/
-│   └── evk/                  # Pre-built EVK images for flashing
+│   └── srg/                  # SRG flash images
 ├── scripts/
 │   └── apply-platform.sh     # One-command platform switch
-└── vendor-reference/         # Original vendor files
+└── vendor-reference/         # Decompiled DTBs for comparison
 ```
 
 ### Switching Platforms
@@ -171,6 +176,15 @@ Modified `imx8mp-evk.dts` (Kernel 6.6) to:
 
 ## Build & Flash Workflow
 
+### Prerequisites (Environment Variables)
+These must be set **before** running any build commands:
+```bash
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
+export CLANG_PATH=$(pwd)/prebuilts/clang/host/linux-x86
+export _JAVA_OPTIONS="-Xmx16g"
+```
+
 ### Environment Setup
 ```bash
 cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
@@ -180,18 +194,48 @@ lunch evk_8mp-trunk_staging-userdebug
 
 ### Build Components
 -   **U-Boot**: `./imx-make.sh bootloader -j$(nproc)`
--   **Kernel (boot.img)**: 
+-   **Kernel + boot.img**:
     ```bash
-    ./imx-make.sh kernel -j$(nproc)  # Compiles kernel/dtb
-    make bootimage -j$(nproc)        # PCKS boot.img (Essential!)
+    ./imx-make.sh kernel -j$(nproc)     # Compile kernel/dtb
+    ./imx-make.sh bootimage -j$(nproc)  # Package boot.img
     ```
 
 ### Flash to SD Card (SRG)
 ```bash
 cd ~/srg-imx8pl-android14-porting/flash-images/srg
-# Ensure boot.img is updated
+# Unmount SD card partitions first
+sudo umount -l /dev/sdb* 2>/dev/null
+# Flash all Android images
 sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 ```
+
+---
+
+## Task 4: U-Boot Android Boot Command (In Progress)
+
+### Problem
+Kernel panic: `VFS: Unable to mount root fs on unknown-block(179,98)`.
+`boot.img` (header v4) contains only the kernel (0-byte ramdisk). The ramdisk is in `init_boot.img`. U-Boot's `CONFIG_BOOTCOMMAND` was using `distro_bootcmd` (standard Linux boot) instead of `boota` (Android AVB boot), so `init_boot.img` was never loaded.
+
+### Root Cause
+`imx8mp_evk_android_defconfig` line 30:
+```diff
+-CONFIG_BOOTCOMMAND="run sr_ir_v2_cmd;run distro_bootcmd;run bsp_bootcmd"
++CONFIG_BOOTCOMMAND="boota"
+```
+
+### Solution
+Changed `CONFIG_BOOTCOMMAND` to `boota`, which invokes the NXP Android AVB boot path (`do_boota` in `fb_fsl_boot.c`). This path:
+1.  Reads A/B slot metadata
+2.  Loads `boot.img` (kernel), `vendor_boot.img` (vendor ramdisk + DTB), `init_boot.img` (generic ramdisk) via AVB
+3.  Combines ramdisks and boots kernel with initramfs
+
+### Android 14 Boot Image Layout
+| Image | Contents | Header |
+|-------|----------|--------|
+| `boot.img` | Kernel only (0-byte ramdisk) | v4 |
+| `init_boot.img` | Generic ramdisk (2.6MB) | v4 |
+| `vendor_boot.img` | Vendor ramdisk + DTB (64MB) | v4 |
 
 ---
 
@@ -203,6 +247,8 @@ sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 | GKI kernel overwrite | **RESOLVED** | Disabled in `imx-make.sh` (`enable_gki=0`) |
 | SRG DDR timing | **RESOLVED** | Applied official 4GB patch |
 | USB Functionality | **PATCHED** | Regulators added, Host mode forced, Type-C disabled |
+| UART4 Console | **RESOLVED** | `chosen` → `&uart4`, pinctrl added |
+| Root FS panic | **PATCHED** | `CONFIG_BOOTCOMMAND` → `boota` |
 
 ---
 
@@ -210,6 +256,8 @@ sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 
 - [x] Obtain correct 4GB DDR timing (Found in meta-aaeon-nxp)
 - [x] Apply Kernel USB fixes (Host mode, VBUS)
-- [ ] Flash and Boot Test on SRG hardware
+- [x] Fix UART4 console (stdout-path, pinctrl_uart4)
+- [x] Fix U-Boot boot command (`boota` for Android AVB)
+- [ ] Rebuild U-Boot with `boota` and re-flash
 - [ ] Verify DDR detection (4GB)
 - [ ] Verify USB functionality (Mouse/Keyboard)

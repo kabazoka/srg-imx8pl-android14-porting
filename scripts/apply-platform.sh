@@ -17,6 +17,7 @@ ANDROID_BUILD="${ANDROID_BUILD:-/mnt/data/imx-android-14.0.0_2.2.0/android_build
 
 UBOOT_HEADER_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/include/configs/imx8mp_evk.h"
 UBOOT_TIMING_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/board/freescale/imx8mp_evk/lpddr4_timing.c"
+UBOOT_DEFCONFIG_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/configs/imx8mp_evk_android_defconfig"
 
 usage() {
     echo "Usage: $0 [evk|srg]"
@@ -76,12 +77,21 @@ cp "${PLATFORM_DIR}/imx8mp_evk.h" "${UBOOT_HEADER_DEST}"
 echo "Copying lpddr4_timing.c..."
 cp "${PLATFORM_DIR}/lpddr4_timing.c" "${UBOOT_TIMING_DEST}"
 
+# Copy defconfig if platform has one
+if [ -f "${PLATFORM_DIR}/imx8mp_evk_android_defconfig" ]; then
+    echo "Copying imx8mp_evk_android_defconfig..."
+    cp "${PLATFORM_DIR}/imx8mp_evk_android_defconfig" "${UBOOT_DEFCONFIG_DEST}"
+else
+    echo "(No platform-specific defconfig, using existing)"
+fi
+
 echo ""
 echo "==> Platform '${PLATFORM}' applied successfully!"
 echo ""
 echo "Next steps:"
 echo "  1. cd ${ANDROID_BUILD}"
-echo "  2. source build/envsetup.sh"
-echo "  3. lunch evk_8mp-trunk_staging-userdebug"
-echo "  4. ./imx-make.sh bootloader -j\$(nproc)"
+echo "  2. Set environment variables (see porting_guide.md Prerequisites)"
+echo "  3. source build/envsetup.sh"
+echo "  4. lunch evk_8mp-trunk_staging-userdebug"
+echo "  5. ./imx-make.sh bootloader -j\$(nproc)"
 echo ""
