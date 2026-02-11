@@ -46,6 +46,10 @@ vendor-reference/             # Original vendor files
 
 # Build bootloader
 cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
+export CLANG_PATH=$(pwd)/prebuilts/clang/host/linux-x86
+export _JAVA_OPTIONS="-Xmx16g"
 source build/envsetup.sh
 lunch evk_8mp-trunk_staging-userdebug
 ./imx-make.sh bootloader -j$(nproc)
@@ -69,16 +73,18 @@ strings flash.bin | grep "console="
 - [x] Dual-platform config (EVK/SRG) created
 - [x] **DDR Timing Resolved** (Official patch applied)
 - [x] SRG images built and ready in `flash-images/srg/`
-- [ ] Test SRG boot on hardware
-- [ ] Verify USB functionality (Kernel patch pending if needed)
+- [x] **Bootloader TEE/UART4 Fixed** (No-TEE build, UART4 console)
+- [ ] Flash and boot test on SRG hardware
+- [ ] Verify USB functionality
 
 ## Known Issues
 
 | Issue | Impact | Status |
 |-------|--------|--------|
 | SRG DDR timing | Board freeze | **Resolved** (Patched) |
-| tee.bin missing | Warning | Ignored |
-| USB Port Limit | Potential | Kernel patch available |
+| tee.bin missing | Build failure | **Resolved** (`pad_image.sh` patched to skip) |
+| Boot hang (TEE) | No U-Boot output | **Resolved** (optee node disabled in DTS) |
+| USB Port Limit | Potential | Kernel patch applied |
 
 ## Key Paths
 - **Build root:** `/mnt/data/imx-android-14.0.0_2.2.0/android_build`

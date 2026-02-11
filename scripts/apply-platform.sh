@@ -17,6 +17,8 @@ ANDROID_BUILD="${ANDROID_BUILD:-/mnt/data/imx-android-14.0.0_2.2.0/android_build
 
 UBOOT_HEADER_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/include/configs/imx8mp_evk.h"
 UBOOT_TIMING_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/board/freescale/imx8mp_evk/lpddr4_timing.c"
+UBOOT_DTS_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/arch/arm/dts/imx8mp-evk.dts"
+UBOOT_DTSI_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/arch/arm/dts/imx8mp-evk-u-boot.dtsi"
 UBOOT_DEFCONFIG_DEST="${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx/configs/imx8mp_evk_android_defconfig"
 
 usage() {
@@ -40,11 +42,13 @@ PLATFORM="$1"
 case "$PLATFORM" in
     evk)
         echo "==> Applying EVK configuration (6GB DDR, UART2)"
-        PLATFORM_DIR="${PORTING_DIR}/uboot/evk"
+        # Use .orig files for EVK
+        SOURCE_SUFFIX=".orig"
         ;;
     srg)
         echo "==> Applying SRG configuration (4GB DDR, UART4)"
-        PLATFORM_DIR="${PORTING_DIR}/uboot/srg"
+        # Use standard files for SRG
+        SOURCE_SUFFIX=""
         ;;
     *)
         echo "Error: Unknown platform '$PLATFORM'"
@@ -52,14 +56,18 @@ case "$PLATFORM" in
         ;;
 esac
 
+SOURCE_BOARD_DIR="${PORTING_DIR}/uboot/board"
+SOURCE_DTS_DIR="${PORTING_DIR}/uboot/dts"
+SOURCE_SPL_DTS_DIR="${PORTING_DIR}/uboot/spl_dts"
+
 # Check source files exist
-if [ ! -f "${PLATFORM_DIR}/imx8mp_evk.h" ]; then
-    echo "Error: ${PLATFORM_DIR}/imx8mp_evk.h not found"
+if [ ! -f "${SOURCE_BOARD_DIR}/imx8mp_evk.h${SOURCE_SUFFIX}" ]; then
+    echo "Error: ${SOURCE_BOARD_DIR}/imx8mp_evk.h${SOURCE_SUFFIX} not found"
     exit 1
 fi
 
-if [ ! -f "${PLATFORM_DIR}/lpddr4_timing.c" ]; then
-    echo "Error: ${PLATFORM_DIR}/lpddr4_timing.c not found"
+if [ ! -f "${SOURCE_BOARD_DIR}/lpddr4_timing.c${SOURCE_SUFFIX}" ]; then
+    echo "Error: ${SOURCE_BOARD_DIR}/lpddr4_timing.c${SOURCE_SUFFIX} not found"
     exit 1
 fi
 
@@ -70,17 +78,28 @@ if [ ! -d "${ANDROID_BUILD}/vendor/nxp-opensource/uboot-imx" ]; then
     exit 1
 fi
 
-# Copy files
-echo "Copying imx8mp_evk.h..."
-cp "${PLATFORM_DIR}/imx8mp_evk.h" "${UBOOT_HEADER_DEST}"
+# Copy board files
+echo "Copying imx8mp_evk.h${SOURCE_SUFFIX}..."
+cp "${SOURCE_BOARD_DIR}/imx8mp_evk.h${SOURCE_SUFFIX}" "${UBOOT_HEADER_DEST}"
 
-echo "Copying lpddr4_timing.c..."
-cp "${PLATFORM_DIR}/lpddr4_timing.c" "${UBOOT_TIMING_DEST}"
+echo "Copying lpddr4_timing.c${SOURCE_SUFFIX}..."
+cp "${SOURCE_BOARD_DIR}/lpddr4_timing.c${SOURCE_SUFFIX}" "${UBOOT_TIMING_DEST}"
 
-# Copy defconfig if platform has one
-if [ -f "${PLATFORM_DIR}/imx8mp_evk_android_defconfig" ]; then
-    echo "Copying imx8mp_evk_android_defconfig..."
-    cp "${PLATFORM_DIR}/imx8mp_evk_android_defconfig" "${UBOOT_DEFCONFIG_DEST}"
+# Copy DTS files (SRG has modified versions, EVK uses originals)
+if [ -f "${SOURCE_DTS_DIR}/imx8mp-evk.dts${SOURCE_SUFFIX}" ]; then
+    echo "Copying imx8mp-evk.dts${SOURCE_SUFFIX}..."
+    cp "${SOURCE_DTS_DIR}/imx8mp-evk.dts${SOURCE_SUFFIX}" "${UBOOT_DTS_DEST}"
+fi
+
+if [ -f "${SOURCE_SPL_DTS_DIR}/imx8mp-evk-u-boot.dtsi${SOURCE_SUFFIX}" ]; then
+    echo "Copying imx8mp-evk-u-boot.dtsi${SOURCE_SUFFIX}..."
+    cp "${SOURCE_SPL_DTS_DIR}/imx8mp-evk-u-boot.dtsi${SOURCE_SUFFIX}" "${UBOOT_DTSI_DEST}"
+fi
+
+# Copy defconfig if available
+if [ -f "${SOURCE_BOARD_DIR}/imx8mp_evk_android_defconfig${SOURCE_SUFFIX}" ]; then
+    echo "Copying imx8mp_evk_android_defconfig${SOURCE_SUFFIX}..."
+    cp "${SOURCE_BOARD_DIR}/imx8mp_evk_android_defconfig${SOURCE_SUFFIX}" "${UBOOT_DEFCONFIG_DEST}"
 else
     echo "(No platform-specific defconfig, using existing)"
 fi
@@ -90,8 +109,7 @@ echo "==> Platform '${PLATFORM}' applied successfully!"
 echo ""
 echo "Next steps:"
 echo "  1. cd ${ANDROID_BUILD}"
-echo "  2. Set environment variables (see porting_guide.md Prerequisites)"
-echo "  3. source build/envsetup.sh"
-echo "  4. lunch evk_8mp-trunk_staging-userdebug"
-echo "  5. ./imx-make.sh bootloader -j\$(nproc)"
+echo "  2. source build/envsetup.sh"
+echo "  3. lunch evk_8mp-trunk_staging-userdebug"
+echo "  4. ./imx-make.sh bootloader -j\$(nproc)"
 echo ""
