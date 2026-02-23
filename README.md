@@ -1,12 +1,12 @@
 # SRG-iMX8PL Android 14 Porting Notes
 
-**Date:** 2026-02-05 (Updated: 2026-02-11)
+**Date:** 2026-02-05 (Updated: 2026-02-23)
 **Platform:** SRG-iMX8PL (based on NXP i.MX8MP EVK)
 **OS:** Android 14
 
 ## Overview
 
-This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, and debugging the boot freeze issue.
+This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, USB VBUS fix, serial console built-in driver, Kconfig dependency chain fix, and debugging multiple boot hang/freeze issues.
 
 ## Hardware Differences: EVK vs SRG
 
@@ -71,7 +71,7 @@ To switch the Android build tree between EVK and SRG configurations:
 
 ## Complete Modification Audit
 
-All changes to the Android build tree vs unmodified NXP source (11 files across 4 repos):
+All changes to the Android build tree vs unmodified NXP source (17 modifications across 5 repos):
 
 ### Repo 1: `vendor/nxp-opensource/uboot-imx/` (6 files)
 
@@ -91,12 +91,14 @@ All changes to the Android build tree vs unmodified NXP source (11 files across 
 | 7 | `common/tools/imx-make.sh` | ENABLE_GKI default 1→0 | ✅ Intentional |
 | 8 | `imx8m/evk_8mp/AndroidUboot.sh` | Added `SPD=none` for non-trusty ATF | ✅ Key TEE fix |
 
-### Repo 3: `vendor/nxp-opensource/kernel_imx/` (2 files)
+### Repo 3: `vendor/nxp-opensource/kernel_imx/` (4 files)
 
 | # | File | Change | Status |
 |---|------|--------|--------|
 | 9 | `arch/arm64/boot/dts/freescale/imx8mp-evk.dts` | UART4 + USB host + RTC + regulators | ✅ Correct |
 | 10 | `arch/arm64/configs/gki_defconfig` | CONFIG_DEBUG_INFO_BTF=y→n | ✅ Build fix |
+| 14 | `drivers/clk/imx/clk-imx8mp.c` | uart4 clock → `_critical` (prevent gate disable) | ✅ Boot hang fix |
+| 16 | `arch/arm64/configs/imx8mp_gki.fragment` | SOC_IMX8M=m→y, SERIAL_IMX=m→y, SERIAL_IMX_CONSOLE=m→y, BUSFREQ=m→y | ✅ Console + busfreq built-in |
 
 ### Repo 4: `vendor/nxp-opensource/imx-mkimage/` (1 file)
 
@@ -104,11 +106,19 @@ All changes to the Android build tree vs unmodified NXP source (11 files across 
 |---|------|--------|--------|
 | 11 | `scripts/pad_image.sh` | Skip missing tee.bin instead of error | ✅ Build fix for SPD=none |
 
-### Not Yet Modified
+### Repo 5: `vendor/nxp-opensource/uboot-imx/` — AVB Auto-Unlock (2026-02-23)
 
-| File | Issue |
-|------|-------|
-| `device/nxp/imx8m/evk_8mp/BoardConfig.mk:135` | `androidboot.console=ttymxc1` should be `ttymxc3` (userspace only) |
+| # | File | Change | Status |
+|---|------|--------|--------|
+| 12 | `drivers/fastboot/fb_fsl/fb_fsl_boot.c` | Auto-unlock LOCKED device in `do_boota()` | ✅ Dev convenience |
+
+### Repo 2 (additional): `device/nxp/` — Kernel cmdline & module list (2026-02-23)
+
+| # | File | Change | Status |
+|---|------|--------|--------|
+| 13 | `imx8m/evk_8mp/BoardConfig.mk:134-135` | `keep_bootcon initcall_debug` + `androidboot.console=ttymxc3` | ✅ Fixed |
+| 15 | `imx8m/evk_8mp/BoardConfig.mk:134` | Added `console=ttymxc3,115200` to kernel cmdline | ✅ Console input fix |
+| 17 | `imx8m/evk_8mp/SharedBoardConfig.mk` | Removed `soc-imx8m.ko` + `busfreq-imx8mq.ko` + `imx.ko` from module list (now built-in) | ✅ Linker fix |
 
 ---
 
@@ -186,6 +196,65 @@ Full boot chain working: SPL → ATF → U-Boot → Kernel → Android init firs
 
 ---
 
+## Task 5: AVB Unlock & Boot Debug - In Progress (2026-02-23)
+
+### Problem
+After modifying `vendor_boot.img` (cmdline changes), AVB hash verification fails:
+- `vendor_boot_a: Hash of data does not match digest in descriptor`
+- Device state `LOCK` → refuses to boot
+- U-Boot has no `avb` command, USB broken (`USB init failed: -22`) → can't `fastboot flashing unlock`
+
+### Solution: Auto-Unlock in U-Boot
+Added 5 lines to `fb_fsl_boot.c` in `do_boota()`, after lock status check:
+```c
+/* SRG: Auto-unlock for development */
+if (lock_status == FASTBOOT_LOCK) {
+    printf("SRG: Auto-unlocking device for development...\n");
+    fastboot_set_lock_stat(FASTBOOT_UNLOCK);
+    lock_status = FASTBOOT_UNLOCK;
+    allow_fail = true;
+}
+```
+- Persists to `fbmisc` partition — subsequent boots stay UNLOCKED
+- No userdata wipe (preserves A/B metadata)
+- AVB hash mismatch becomes warning, not fatal
+
+### Also Fixed: BoardConfig.mk
+```makefile
+# Line 134-135
+BOARD_KERNEL_CMDLINE := init=/init ... keep_bootcon initcall_debug
+BOARD_BOOTCONFIG += androidboot.console=ttymxc3 androidboot.hardware=nxp
+```
+- `keep_bootcon`: prevents boot console de-registration (keeps earlycon alive)
+- `initcall_debug`: logs every module init call for hang diagnosis
+- cmdline goes into `vendor_boot.img` (NOT `boot.img`) — must use `./imx-make.sh vendorbootimage`
+
+### Key Learnings
+
+**Bootloader Image Selection:**
+- `imx-make.sh bootloader` builds **7 variants** (defined in `UbootKernelBoardConfig.mk`)
+- `imx-mkimage/iMX8M/flash.bin` = LAST variant = **UUU** (no `boota` command!)
+- Correct image: `out/.../obj/UBOOT_COLLECTION/u-boot-imx8mp.imx`
+
+**A/B Slot Metadata:**
+- Stored in misc partition (ptn 9 = `/dev/sdc9`) at offset 2048 bytes
+- After 7 failed boots, `tries_remaining=0` → both slots unbootable → `get_curr_slot()=-1` → OOB array access → "boot header version not supported"
+- Fix: write valid `bootloader_control` struct with priority=15, tries=7
+
+### Boot Progress (2026-02-23)
+```
+SRG: Auto-unlocking device for development...   ✅ AVB auto-unlock
+verify FAIL, state: UNLOCK                      ✅ Continues despite hash mismatch
+boot 'boot_a' still                             ✅ Slot A selected
+Starting kernel ...                             ✅ Kernel loading
+earlycon: ec_imx6q0 at MMIO 0x30a60000         ✅ UART4 earlycon
+keep_bootcon + initcall_debug in cmdline        ✅ Debug flags active
+init: init first stage started!                 ✅ Android init running
+init: Loading module mxc-clk.ko                 ✅ Module loading in progress
+```
+
+---
+
 ## Build & Flash Workflow
 
 ### Environment Setup
@@ -200,20 +269,119 @@ lunch evk_8mp-trunk_staging-userdebug
 ```
 
 ### Build Components
-- **U-Boot**: `./imx-make.sh bootloader -j$(nproc)`
-- **Kernel (boot.img)**:
-    ```bash
-    ./imx-make.sh kernel -j$(nproc)  # Compiles kernel/dtb
-    make bootimage -j$(nproc)        # Packs boot.img
-    ```
 
-### Flash to SD Card (SRG)
+| 指令 | 做什麼 | 產出 |
+|------|--------|------|
+| `./imx-make.sh bootloader -j$(nproc)` | 編譯 SPL + ATF + U-Boot（7 個 variant） | `u-boot-imx8mp.imx` |
+| `./imx-make.sh bootimage -j$(nproc)` | 編譯 kernel + 打包 boot.img | `boot.img` |
+| `./imx-make.sh vendorbootimage -j$(nproc)` | 編譯 modules + DTB + 打包 vendor_boot.img | `vendor_boot.img` |
+| `./imx-make.sh -c bootimage -j$(nproc)` | **先 `make clean`** 再編譯（強制重新編譯） | `boot.img` |
+
+> **WARNING**: `imx-mkimage/iMX8M/flash.bin` = 最後一個 variant = **UUU**（沒有 `boota`！）
+> 正確的 U-Boot image: `out/.../obj/UBOOT_COLLECTION/u-boot-imx8mp.imx`
+
+### Image Content Summary
+
+| Image | Contains | SD Card Partition |
+|-------|----------|-------------------|
+| `boot.img` | Kernel binary (`Image.gz`) | `/dev/sdc3` |
+| `vendor_boot.img` | cmdline + kernel modules (`.ko`) + DTB + vendor ramdisk | `/dev/sdc7` |
+| `u-boot-imx8mp.imx` | SPL + ATF + U-Boot | `/dev/sdc` (seek=32k) |
+
+> **CRITICAL**: Kernel modules 和 DTB 都在 `vendor_boot.img` 裡，**不是** `boot.img`！
+> - `boot.img` 只有 kernel binary
+> - cmdline 也在 `vendor_boot.img`（因為 `BOARD_BOOT_HEADER_VERSION=4` + `TARGET_USE_VENDOR_BOOT=true`）
+> - 改了任何 kernel source → 必須 rebuild **兩個** image 再 flash
+
+### Incremental Build 的陷阱
+
+NXP build system 用 make 的 incremental build（`.cmd` 檔 + timestamp）偵測源碼變更。
+**已知問題：有時改了 .dts 或 .c 檔後 make 不會重新編譯！**
+
+**症狀：** build 成功但 flash 後行為沒改變（DTB/Image 的 timestamp 是幾天前的）
+
+**解法：用 `-c` flag 強制 clean build**
 ```bash
-cd ~/srg-imx8pl-android14-porting/flash-images/srg
-sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
+# 推薦方式：-c = make clean + 重新編譯（保證所有改動都編譯進去）
+./imx-make.sh -c bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
 ```
 
-### Copy Build Artifacts
+**Build 後驗證（flash 前必做）：**
+```bash
+# 確認 DTB 和 Image 時間戳是「剛剛」
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/dts/freescale/imx8mp-evk.dtb
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/Image*
+
+# 確認 .config 關鍵設定
+grep CONFIG_SOC_IMX8M= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+grep CONFIG_IMX8M_BUSFREQ= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+grep CONFIG_SERIAL_IMX= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+# 三個都應該是 =y
+```
+
+### Force Module Rebuild（針對單一模組的替代方案）
+如果只改了一個 .c 檔，可以不用 `-c` clean，改為手動刪除該模組的 cache：
+```bash
+# 以 clk-imx8mp.ko 為例
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.mod*
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/.clk-imx8mp*.cmd
+# 也刪除 vendor_ramdisk 和 packaging 中的 cache
+rm -f out/target/product/evk_8mp/vendor_ramdisk/lib/modules/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_VENDOR_RAMDISK_intermediates/lib/modules/0.0/lib/modules/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_vendor_ramdisk_stripped_intermediates/clk-imx8mp.ko
+
+# 然後 rebuild（不需 -c）
+./imx-make.sh bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
+```
+
+### Flash to SD Card
+
+```bash
+# === 方式 A：只更新 kernel（最常用） ===
+sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
+sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
+sync
+
+# === 方式 B：也更新 U-Boot ===
+sudo dd if=out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx of=/dev/sdc bs=1k seek=32 conv=fsync,nocreat
+sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
+sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
+sync
+
+# === 方式 C：全部重新 flash（partition + system） ===
+cd ~/srg-imx8pl-android14-porting/flash-images/srg
+sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
+# 注意：full flash 後 ALWAYS 手動 dd boot.img + vendor_boot.img（flash script 可能不會寫入）
+sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
+sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
+sync
+```
+
+### A/B Metadata 重置（如果 boot 失敗 7 次後無法開機）
+
+**症狀：** U-Boot 報 `get_curr_slot()=-1` 或 `boot header version not supported`
+
+**原因：** misc partition（`/dev/sdc9`）offset 2048 的 `bootloader_control` struct，`tries_remaining` 每次失敗 -1，降到 0 後兩個 slot 都不可開機。
+
+```bash
+sudo python3 -c "
+import struct, zlib
+slot=bytes([0x7F,0x00])  # priority=127, tries_remaining=0 (successful)
+data=(b'_a\x00\x00'      # slot_suffix='_a'
+     +struct.pack('<I',0x42414342)  # magic='BACB'
+     +bytes([1,2])        # version=1, nb_slot=2
+     +b'\x00\x00'         # recovery_tries_remaining=0, merge_status=0
+     +slot+slot            # slot_info[0], slot_info[1]
+     +b'\x00'*4           # reserved0
+     +b'\x00'*8)          # reserved1
+full=data+struct.pack('<I',zlib.crc32(data)&0xFFFFFFFF)  # append CRC32
+f=open('/dev/sdc9','r+b'); f.seek(2048); f.write(full); f.flush()
+print('OK:', full.hex())
+" && sync
+```
+
+### Copy Build Artifacts（備份到 porting repo）
 ```bash
 cp /mnt/data/imx-android-14.0.0_2.2.0/android_build/out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx \
    ~/srg-imx8pl-android14-porting/flash-images/srg/u-boot-imx8mp.imx
@@ -221,15 +389,320 @@ cp /mnt/data/imx-android-14.0.0_2.2.0/android_build/out/target/product/evk_8mp/o
 
 ---
 
+## Task 6: Kernel Clock Module Hang — Fixed (2026-02-23)
+
+### Problem
+System hangs at `clk-imx8mp.ko` module loading during Android init first stage. No UART output, no HDMI — confirmed hard kernel hang.
+
+### Root Cause
+`__imx8m_clk_hw_composite()` in `clk-composite-8m.c:311-317` **disables the clock gate (bit 28)** for non-`CLK_IS_CRITICAL` clocks during registration:
+
+```c
+if (!(flags & CLK_IS_CRITICAL) && !(mcore_booted && m4_lpa_required(name))) {
+    val = readl(reg);
+    val &= ~BIT(PCG_CGC_SHIFT);  // clear bit 28
+    writel(val, reg);              // UART4 clock DISABLED!
+}
+```
+
+- UART4 (SRG console) was registered as `imx8m_clk_hw_composite()` (non-critical)
+- Gate bit cleared → UART4 hardware clock stopped
+- earlycon TX polling (`while(!(readl(USR2) & TXDC))`) waits forever → **hard hang**
+- EVK unaffected: uart2 (EVK console) uses `_critical` variant, gate not cleared
+
+### Fix
+**File:** `vendor/nxp-opensource/kernel_imx/drivers/clk/imx/clk-imx8mp.c`
+
+```c
+// Before (hangs on SRG):
+hws[IMX8MP_CLK_UART4] = imx8m_clk_hw_composite("uart4", imx8mp_uart4_sels, ccm_base + 0xb080);
+
+// After (fixed):
+hws[IMX8MP_CLK_UART4] = imx8m_clk_hw_composite_critical("uart4", imx8mp_uart4_sels, ccm_base + 0xb080);
+```
+
+### Debug Method
+Binary search with `pr_err()` checkpoints in the probe function — 5 iterations to narrow from ~300 clock registrations to the exact uart4 line.
+
+---
+
+## Task 7: Serial Console Input Fix (2026-02-23)
+
+### Problem
+After clk-imx8mp.ko fix, Android boots to HDMI (lock screen visible). But serial console (UART4) only shows output — keyboard input not accepted.
+
+### Root Cause (Two Issues)
+
+**Issue 1:** Kernel cmdline missing `console=ttymxc3,115200`
+- earlycon provides TX-only output (write-only, no RX interrupt)
+- `androidboot.console=ttymxc3` only tells Android init which TTY to use — doesn't register kernel TTY
+
+**Issue 2:** `CONFIG_SERIAL_IMX=m` (module, not built-in)
+- `imx8mp_gki.fragment` (line 13-14) sets `CONFIG_SERIAL_IMX=m` and `CONFIG_SERIAL_IMX_CONSOLE=m`
+- This fragment is applied LAST in kernel config merge, overriding `gki_defconfig`'s `=y`
+- Config merge order: `gki_defconfig` → `imx8mp_gki.fragment` (last wins)
+- With modular driver, `console=ttymxc3,115200` deferred registration may not work properly
+
+### Fix (Two Files)
+
+1. **`device/nxp/imx8m/evk_8mp/BoardConfig.mk`** (line 134)
+   - Added `console=ttymxc3,115200` to `BOARD_KERNEL_CMDLINE`
+
+2. **`vendor/nxp-opensource/kernel_imx/arch/arm64/configs/imx8mp_gki.fragment`** (line 13-14)
+   - Changed `CONFIG_SERIAL_IMX=m` → `=y`
+   - Changed `CONFIG_SERIAL_IMX_CONSOLE=m` → `=y`
+   - Makes imx-uart driver built-in → console registered at kernel boot
+
+### Linker Error: `request_bus_freq` undefined
+
+Changing `SERIAL_IMX=y` causes linker error because `imx.c:1376` calls `request_bus_freq()`/`release_bus_freq()` from `busfreq-imx8mq.ko` (still =m). Built-in code cannot link against module symbols.
+
+**Fix chain (3 files):**
+1. `imx8mp_gki.fragment`: `CONFIG_IMX8M_BUSFREQ=m` → `=y`
+2. `SharedBoardConfig.mk`: remove `busfreq-imx8mq.ko` + `imx.ko`（built-in = 不產生 .ko）
+
+**Kconfig 降級陷阱：**
+但 `CONFIG_IMX8M_BUSFREQ=y` 會被 Kconfig 自動降級為 `=m`！原因：
+```
+# imx8mp_gki.fragment
+CONFIG_SOC_IMX8M=m        ← BUSFREQ depends on 這個
+CONFIG_IMX8M_BUSFREQ=y    ← 想要 built-in
+```
+Kconfig 規則：**built-in 不能依賴 module** → `BUSFREQ=y` 自動降為 `=m`。
+
+**最終完整 fix：**
+```diff
+# imx8mp_gki.fragment
+-CONFIG_SOC_IMX8M=m
++CONFIG_SOC_IMX8M=y
+ CONFIG_SERIAL_IMX=y
+ CONFIG_SERIAL_IMX_CONSOLE=y
+ CONFIG_IMX8M_BUSFREQ=y
+```
+- `SOC_IMX8M=y` → `soc-imx8m.ko` 變 built-in → 也要從 SharedBoardConfig.mk 移除
+- 其他依賴 `SOC_IMX8M` 的 module（如 `imx8m_pm_domains.ko`、`pinctrl-imx8mp.ko`）不受影響（module 可依賴 built-in）
+
+**SharedBoardConfig.mk 共移除 3 個 .ko：**
+- `soc-imx8m.ko`（SOC_IMX8M=y）
+- `busfreq-imx8mq.ko`（IMX8M_BUSFREQ=y）
+- `imx.ko`（SERIAL_IMX=y）
+
+### Current Status (2026-02-23)
+- HDMI: Android lock screen visible, time updating (system alive)
+- Serial console: pending verification with clean rebuild
+- USB/ADB: pending verification with clean rebuild
+
+---
+
+## Task 8: USB Fix — AAEON Patch Reference (2026-02-23)
+
+### Problem
+USB mouse/keyboard 插上去沒反應，ADB over USB 也不行。
+
+### Root Cause
+對比 AAEON 官方 kernel patch (`patches/001-srg-imx8pl-kernel-all.patch`) 發現多處差異：
+
+| 項目 | 修改前（錯誤） | 修改後（正確） | 影響 |
+|------|---------------|---------------|------|
+| VBUS regulator 極性 | `enable-active-high` | `enable-active-low` | **USB 完全沒電！** |
+| VBUS pad value | `0x10` | `0x59` | GPIO 驅動能力不足 |
+| USB-A connector 子節點 | 缺少 | 已加入 | USB framework metadata |
+| EVK `reg_usb_vbus` (GPIO1_14) | 存在 | 已刪除 | SRG 不使用 |
+
+**關鍵問題**：SRG 用 P-channel MOSFET 控制 VBUS，`enable-active-low` = GPIO LOW 才通電。原本設定 `enable-active-high` → regulator enable 時 GPIO 拉 HIGH → MOSFET OFF → USB 裝置完全沒電。
+
+### Fix
+**File:** `vendor/nxp-opensource/kernel_imx/arch/arm64/boot/dts/freescale/imx8mp-evk.dts`
+
+1. **VBUS 極性修正** — `reg_usb1_vbus` & `reg_usb2_vbus`:
+   - `enable-active-high` → `enable-active-low`
+   - 新增 `startup-delay-us = <100000>` (100ms 啟動延遲)
+
+2. **Pad value** — `pinctrl_usb1_vbus` & `pinctrl_usb2_vbus`:
+   - `0x10` → `0x59` (higher drive + pull config)
+
+3. **USB-A connector** — `&usb3_0` & `&usb3_1`:
+   ```dts
+   connector {
+       compatible = "usb-a-connector";
+       vbus-supply = <&reg_usb1_vbus>;  /* or reg_usb2_vbus */
+   };
+   ```
+
+4. **移除 EVK `reg_usb_vbus`** (GPIO1_IO14, SRG 不使用)
+
+---
+
+## Task 9: Build Not Taking Effect — Stale DTB/Image (2026-02-23)
+
+### Problem
+完成所有源碼改動（USB DTS + SERIAL_IMX=y + BUSFREQ=y）後 rebuild + flash，但**改動完全無效** — USB 和 Serial console 都沒改善。
+
+### Root Cause 1: Build 用了舊的 cached binary
+
+| 檔案 | 時間戳 | 問題 |
+|------|--------|------|
+| 源碼 `imx8mp-evk.dts` | Feb 23 17:20 | 剛改 |
+| 編譯的 `imx8mp-evk.dtb` | **Feb 9 18:00** | **14天前！** |
+| Kernel `Image` | **Feb 6 17:06** | **17天前！** |
+| `boot.img` | Feb 23 16:53 | 在源碼改動之前就 build 了 |
+| `vendor_boot.img` | Feb 23 16:55 | 同上 |
+
+`./imx-make.sh bootimage` 會觸發 kernel 編譯，但 make 的 incremental build 機制（`.cmd` 檔案 + timestamp）沒偵測到 DTS/source 變更，所以**跳過了重新編譯**，直接把舊的 DTB 和 Image 打包進 boot.img/vendor_boot.img。
+
+### Root Cause 2: Kconfig 降級（CONFIG_IMX8M_BUSFREQ=y → =m）
+
+Fragment 已設 `CONFIG_IMX8M_BUSFREQ=y`，但實際 `.config` 仍是 `=m`：
+- 原因：`CONFIG_SOC_IMX8M=m`（module），而 BUSFREQ `depends on SOC_IMX8M`
+- Kconfig 規則：built-in 不能依賴 module → 自動降級為 `=m`
+- 修正：`CONFIG_SOC_IMX8M=m` → `=y`（見 Task 7 完整說明）
+
+### Fix: 強制 Clean Rebuild
+
+```bash
+cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
+
+# -c flag = make clean 再編譯（刪除所有 .o/.ko/.dtb，從頭編譯）
+./imx-make.sh -c bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
+```
+
+### Build 後驗證（flash 前必做）
+
+```bash
+# 1. 確認 DTB 和 Image 時間戳是「剛剛」（不是幾天前）
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/dts/freescale/imx8mp-evk.dtb
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/Image*
+
+# 2. 確認 .config 裡的關鍵設定
+grep CONFIG_IMX8M_BUSFREQ out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+# 預期：CONFIG_IMX8M_BUSFREQ=y
+
+grep CONFIG_SOC_IMX8M out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+# 預期：CONFIG_SOC_IMX8M=y
+
+grep CONFIG_SERIAL_IMX= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+# 預期：CONFIG_SERIAL_IMX=y
+
+# 3. 確認移除的 .ko 不存在
+ls out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/soc/imx/soc-imx8m.ko 2>&1
+ls out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/soc/imx/busfreq-imx8mq.ko 2>&1
+ls out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/tty/serial/imx.ko 2>&1
+# 預期：全部 No such file（因為是 built-in，不產生 .ko）
+```
+
+### imx-make.sh Build 機制說明
+
+| 指令 | 做什麼 | 會重新編譯嗎？ |
+|------|--------|---------------|
+| `./imx-make.sh bootimage` | 編譯 kernel + 打包 boot.img | 是，但 incremental（可能跳過） |
+| `./imx-make.sh vendorbootimage` | 編譯 modules + DTB + 打包 vendor_boot.img | 是，但 incremental |
+| `./imx-make.sh -c bootimage` | **先 `make clean`** 再編譯 + 打包 | **是，強制從頭** |
+| `./imx-make.sh kernel` | 只編譯 kernel（不打包 .img） | incremental |
+| `./imx-make.sh -c kernel` | clean + 重新編譯 kernel | **強制從頭** |
+
+> **教訓：改了 DTS 或 .c 原始碼後，如果 incremental build 沒偵測到變更，必須用 `-c` flag 強制 clean build！**
+
+---
+
+## Flash & 驗證 SOP
+
+### 1. Flash（build 完成後）
+
+```bash
+# boot.img → /dev/sdc3
+sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
+
+# vendor_boot.img → /dev/sdc7
+sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
+
+sync
+```
+
+### 2. 重置 A/B Metadata（如果之前已 7 次失敗 boot）
+
+A/B metadata 在 misc partition（`/dev/sdc9`）offset 2048 bytes。
+每次 boot 失敗 `tries_remaining` 會 -1，降到 0 後兩個 slot 都不可開機 → U-Boot 報錯 `get_curr_slot()=-1`。
+
+```bash
+sudo python3 -c "
+import struct, zlib
+slot=bytes([0x7F,0x00])  # priority=127, tries_remaining=0 (successful)
+data=(b'_a\x00\x00'      # slot_suffix='_a'
+     +struct.pack('<I',0x42414342)  # magic='BACB'
+     +bytes([1,2])        # version=1, nb_slot=2
+     +b'\x00\x00'         # recovery_tries_remaining=0, merge_status=0
+     +slot+slot            # slot_info[0], slot_info[1]
+     +b'\x00'*4           # reserved0
+     +b'\x00'*8)          # reserved1
+full=data+struct.pack('<I',zlib.crc32(data)&0xFFFFFFFF)  # append CRC32
+f=open('/dev/sdc9','r+b'); f.seek(2048); f.write(full); f.flush()
+print('OK:', full.hex())
+" && sync
+```
+
+**欄位說明：**
+- `slot_suffix='_a'`：目前使用 slot A
+- `priority=0x7F (127)`：最高優先
+- `tries_remaining=0x00`：0 = 已標記為 successful（不會 countdown）
+- `magic=0x42414342 ('BACB')`：bootloader_control magic number
+- CRC32 在最後 4 bytes，用 `zlib.crc32()` 計算
+
+### 3. 驗證（開機後）
+
+| 項目 | 預期結果 | 驗證方式 |
+|------|---------|---------|
+| Serial console 輸出 | 看到 boot log | minicom/picocom 連接 UART4 |
+| Serial console 輸入 | 能打字、shell prompt | 按 Enter，應出現 `console:/ $` |
+| USB 滑鼠 | HDMI 畫面出現游標 | 插入 USB 滑鼠 |
+| USB 鍵盤 | 能操作 UI | 插入 USB 鍵盤 |
+| Android Home Screen | 解鎖後看到桌面 | 用 USB 鍵盤/滑鼠解鎖 |
+
+Serial console 進一步驗證：
+```bash
+# 在 serial console 上執行
+dmesg | grep -i usb    # 應看到 USB device enumeration
+dmesg | grep -i vbus   # 應看到 VBUS regulator enabled
+dmesg | grep -i ttymxc # 應看到 console [ttymxc3] enabled
+cat /proc/cmdline      # 應包含 console=ttymxc3,115200
+```
+
+---
+
 ## Next Steps
 
+### Completed
 - [x] Obtain correct 4GB DDR timing (Found in meta-aaeon-nxp)
 - [x] Apply Kernel USB fixes (Host mode, VBUS)
 - [x] Fix U-Boot DTS UART4 migration (stdout-path, console, status)
 - [x] Audit all build tree modifications vs unmodified source
 - [x] Fix ATF UART console (IMX_BOOT_UART_BASE=0x30A60000)
 - [x] Boot to kernel + Android init first stage
-- [ ] Debug any remaining boot issues (module loading, second stage init)
-- [ ] Verify DDR detection (4GB)
-- [ ] Verify USB functionality (Mouse/Keyboard)
-- [ ] Fix `androidboot.console=ttymxc3` in BoardConfig.mk
+- [x] Fix `androidboot.console=ttymxc3` in BoardConfig.mk
+- [x] AVB auto-unlock for development (fb_fsl_boot.c)
+- [x] Add `keep_bootcon initcall_debug` to kernel cmdline
+- [x] Verify DDR detection (4GB confirmed in boot log)
+- [x] Fix clk-imx8mp.ko hang (uart4 clock gate → `_critical`)
+- [x] Android boots to HDMI lock screen
+- [x] Add `console=ttymxc3,115200` to kernel cmdline (serial input fix)
+- [x] Fix `CONFIG_SERIAL_IMX=m→y` in `imx8mp_gki.fragment` (built-in console)
+- [x] Fix linker error: `CONFIG_IMX8M_BUSFREQ=m→y` + remove .ko from SharedBoardConfig
+- [x] Fix Kconfig 降級: `CONFIG_SOC_IMX8M=m→y`（使 BUSFREQ=y 不被降為 =m）
+- [x] Remove `soc-imx8m.ko` from SharedBoardConfig.mk（SOC_IMX8M=y → built-in）
+- [x] Fix USB VBUS polarity (`enable-active-high` → `enable-active-low`)
+- [x] Fix USB pad values (`0x10` → `0x59`)
+- [x] Add USB-A connector nodes to `&usb3_0` / `&usb3_1`
+- [x] Remove EVK `reg_usb_vbus` (GPIO1_14, unused on SRG)
+
+### Pending
+- [ ] **Clean rebuild**: `./imx-make.sh -c bootimage && vendorbootimage`（**必須用 `-c` flag**）
+- [ ] **Build 後驗證**: 確認 DTB/Image 時間戳 + .config 正確
+- [ ] **Flash**: dd boot.img + vendor_boot.img
+- [ ] **重置 A/B metadata**（如需要）
+- [ ] Verify serial console input works
+- [ ] Verify USB mouse/keyboard works
+- [ ] Complete full Android boot to home screen
+
+### Known Potential Issues（下一步可能遇到）
+- Trusty modules (#5-8 in modules.load) — `SPD=none` 但 module 仍被載入，可能 fail
+- `imx8mp-blk-ctrl.ko` (#10) — 已知 `regmap_test_bits` hang 問題
+- `of_clk_add_hw_provider()` — assigned-clock-rates PLL lock polling

@@ -1,0 +1,1473 @@
+
+#BSP URL
+https://www.nxp.com/design/design-center/software/embedded-software/i-mx-software/android-os-for-i-mx-applications-processors:IMXANDROID
+
+Download imx-android-13.0.0_2.2.0.tar.gz :Android 13.0.0_2.0.0 (L6.1.22_2.0.0 BSP)
+https://www.nxp.com/webapp/sps/download/license.jsp?colCode=13.0.0_2.0.0_ANDROID_SOURCE&appType=file1&DOWNLOAD_ID=null
+
+ref.
+https://hackmd.io/@Boyan/rJrj0O5y6
+https://www.wpgdadatong.com.cn/blog/detail/42022
+https://hackmd.io/@Boyan/rJrj0O5y6#Android%E4%BD%BF%E7%94%A8%E6%8A%80%E5%B7%A7 (重要)
+https://www.bilibili.com/read/cv22742581/
+https://www.wpgdadatong.com/blog/detail/74100 (大大通)
+https://wiki.t-firefly.com/Core-3568J/driver_lcd.html (很多裝置)
+https://weiwangqiang.github.io/2020/03/16/dumpsys-debug-detail/ (dumpsys 指令)
+https://blog.csdn.net/SHH_1064994894/article/details/131966009 (Android13 Root实现和原理分析)
+https://www.wpgdadatong.com/blog/detail/44625([i.MX8M PLUS Android] Android R開發構建指南)
+
+https://www.wpgdadatong.com/blog/detail/74100
+(NXP i.MX Android BSP 開發環境架設 含相關tool chain,bsp下載)
+
+printk
+######################################################################################################################
+0327
+--- 燒錄demo image
+1.參考 Android_Quick_Start_Guide.pdf
+2.uuu_imx_android_flash.sh放在C:\project\Android\android-13.0.0_2.0.0_image_8mpevk\android-13.0.0_2.0.0_image_8mpevk
+3.下載UUU 1.4.182 ,放到ubnutu echo $PATH路徑下(目前放到/usr/local/sbin)
+4.EVK切到 download mode(0001) 上電開電源 type-c 接到PC USB
+5.可先執行 ./uuu -lsusb 確認抓到EVK
+6.android-13.0.0_2.0.0_image_8mpevk.tar.gz解壓縮後執行裡面
+  sudo ./uuu_imx_android_flash.sh -f imx8mp -a -e -d revb4 -u trusty-dual
+7.切回 emmc mode(0010) 上電開機，連接console(COM10)第3port
+
+--- 編譯source
+1.參考 Android_User's_Guide.pdf
+2.安裝ubnutu相關套件
+3.repo 設定安裝參照使用之前其他專案
+4.下載 imx-android-13.0.0_2.0.0.tar.gz 後解壓縮
+5.載程式碼 source imx-android-13.0.0_2.0.0/imx_android_setup.sh
+6.export MY_ANDROID=/home/fox/project/imx8m_android/imx-android-13.0.0_2.0.0/android_build
+7.安裝 GCC cross-compile gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf.tar.xz gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz
+  sudo tar -xvJf gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf.tar.xz -C /opt
+  export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+8.安裝 kernel-build-tools
+  sudo git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 /opt/prebuilt-android-clang
+  cd /opt/prebuilt-android-clang
+  sudo git checkout d20e409261d6ad80a0c29ac2055bf5c3bb996ef4
+  export CLANG_PATH=/opt/prebuilt-android-clang
+  
+  sudo git clone https://android.googlesource.com/kernel/prebuilts/build-tools /opt/prebuilt-android-kernel-build-tools
+  cd /opt/prebuilt-android-kernel-build-tools
+  sudo git checkout e3f6a8c059b94f30f7184a7d335876f8a13a2366
+  export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+7.編譯source
+  cd ${MY_ANDROID}
+  source build/envsetup.sh
+  lunch evk_8mp-userdebug
+  ./imx-make.sh -j4 2>&1 | tee build-log.txt
+8.錯誤
+  FAILED: out/soong/build.ninja  因為swap空間不夠 增加20G
+  https://cat.chrizchow.com/2022/07/ubuntu-swap.html
+9.檔案
+  build out/target/product/evk_8mp/boot.img
+10.uuu (fox FTP有放此檔案)
+  把檔案放到/usr/local/bin/uuu
+######################################################################################################################
+11/8
+
+--- 建置環境
+export MY_ANDROID=/home/fox/project/imx8_android/imx-android-13.0.0_2.0.0/android_build/
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+cd ${MY_ANDROID}
+source build/envsetup.sh
+lunch evk_8mp-userdebug
+./imx-make.sh bootloader -j4
+./imx-make.sh kernel -c -j4
+./imx-make.sh bootimage -j4
+./imx-make.sh dtboimage -j4
+./imx-make.sh -j4 2>&1
+######################################################################################################################
+11/12
+
+--- uart2 -> uart4
+1.參考 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Albert\20241112_imx8pl_patch
+  修改 uboot-imx
+         arch/arm/dts/imx8mp-evk-u-boot.dtsi
+		 arch/arm/dts/imx8mp-evk.dts
+		 board/freescale/imx8mp_evk/imx8mp_evk.c
+		 board/freescale/imx8mp_evk/lpddr4_timing.c
+		 include/configs/imx8mp_evk.h
+		 
+         configs/imx8mp_evk_*
+            uboot .config
+			CONFIG_USB_TCPC=y
+            =># CONFIG_USB_TCPC is not set
+            # CONFIG_IMX_HAB is not set
+            =>CONFIG_IMX_HAB=y
+            檢查是否設定有進去 ${MY_ANDROID}\out\target\product\evk_8mp\obj\UBOOT_OBJ\.config
+			
+  修改 imx-atf
+          arm-trusted-firmware\plat\imx\imx8m\imx8mp\imx8mp_bl31_setup.c
+		  arm-trusted-firmware\plat\imx\imx8m\imx8mp\platform.mk
+
+2.
+android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk
+  BOARD_BOOTCONFIG += androidboot.console=ttymxc3
+  
+--- kernel patch
+1.參考 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Albert\20241112_imx8pl_patch
+  修改 arch/arm64/boot/dts/freescale/imx8mp-ab2.dts
+       arch/arm64/boot/dts/freescale/imx8mp-evk-ecspi-slave.dts
+	   arch/arm64/boot/dts/freescale/imx8mp-evk-it6263-lvds-dual-channel.dts
+	   arch/arm64/boot/dts/freescale/imx8mp-evk-jdi-wuxga-lvds-panel.dts
+	   arch/arm64/boot/dts/freescale/imx8mp-evk-root.dts
+	   arch/arm64/boot/dts/freescale/imx8mp-evk-rpmsg.dts
+	   arch/arm64/boot/dts/freescale/imx8mp-evk.dts
+######################################################################################################################
+11/13
+
+--- 安裝 libgpiod
+https://e2echina.ti.com/support/machine-translation/mt-processors/f/mt-processors-forum/780738/sk-am62-sk-am62-android-ndk-gpio
+https://blog.csdn.net/Industio_CSDN/article/details/134202889
+https://www.jianshu.com/p/99840fe3a8c8
+1.cd ${MY_ANDROID}/external
+2.mkdir libgpiod
+3.git clone https://github.com/technexion-android/platform_external_libgpiod.git libgpiod
+4.vi ${MY_ANDROID}/android_build/device/nxp/imx8m/evk_8mp/evk_8mp.mk
+  PRODUCT_PACKAGES += \
+    RockchipPinnerService \
+       gpioset \
+       gpiomon \
+       gpioinfo \
+       gpioget \
+       gpiofind \
+       gpiodetect \
+	   
+--- lan adb
+1.修改\android_build\out\target\product\evk_8mp\system\build.prop
+  # Auto-added by post_process_props.py
+  persist.sys.usb.config=adb
++ service.adb.tcp.port=5555
+  # end of file
+
+--- hostname
+1.\android_build\device\nxp\imx8m\evk_8mp\init.rc
+
+--- 移除healthd: battery 訊息
+1./system/core/healthd/BatteryMonitor.cpp
+2.//20241113
+	//KLOG_WARNING(LOG_TAG, "%s\n", dmesgline);
+	
+--- USB上port 隨身碟讀取問題
+1.android_build/device/nxp/imx8m/evk_8mp/fstab.nxp
+
+--- SDcard 使用問題
+1.\android_build\device\nxp\imx8m\evk_8mp\fstab.nxp
+/devices/platform/soc@0/30800000.bus/30b50000.mmc/mmc_host/* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata
+
+---init.rc 增加aaeon.sh呼叫tool (要把第三方su打開或關閉selinux)
+1.vendor/aaeon/aaeon.sh
+2.android_build/device/nxp/imx8m/evk_8mp/evk_8mp.mk
+3.\imx-android\android_build\system\core\rootdir\init.rc
+4.android_build/out/target/product/evk_8mp/vendor/usr$  放置相關工具
+5.Y:\project\imx8m_android\imx-android\android_build\system\extras\su\su.cpp
+  Y:\project\imx8m_android\imx-android\android_build\system\core\libcutils\fs_config.cpp
+  Y:\project\imx8m_android\imx-android\android_build\frameworks\base\core\jni\com_android_internal_os_Zygote.cpp
+  Y:\project\imx8m_android\imx-android\android_build\device\nxp\imx8m\evk_8mp\sepolicy\init.te
+  Y:\project\imx8m_android\imx-android\android_build\packages\modules\adb\daemon\main.cpp
+  Y:\project\imx8m_android\imx-android\android_build\system\core\init\selinux.cpp
+6.改BoardConfig.mk
+  BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive
+7.X:\project\imx8pl_android\android_build\device\nxp\imx8m\evk_8mp\sepolicy\file_contexts
+  # aaeon related
+  /vendor/bin/aaeon.sh                        u:object_r:aaeonshell_exec:s0
+  
+######################################################################################################################
+11/14
+
+--- 8852be
+1.tar -xzvf realtek_wifi_SDK_for_android_13_x_<date>.tgz (20241129 移除)
+  cp -rf hardware/realtek/ /home/fox/project/imx8m_android/imx-android/android_build/hardware/
+2.tar -xzvf supplicant_overlay_config.tar.gz
+  修改Y:\project\imx8m_android\imx-android\android_build\device\nxp\common\wifi
+  p2p_disabled=1 => wpa_supplicant_overlay.conf 
+  p2p_no_group_iface=1 => p2p_supplicant_overlay.conf
+  (預設都已加入，不用改)
+3.X:\project\imx8_android\imx-android-13.0.0_2.0.0\android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk (20241129 移除)
+  移除@block_wifi 增加@8852BE wifi
+4.ref 2.2 init.xxx.rc (20241129 移除)
+  X:\project\imx8_android\imx-android-13.0.0_2.0.0\android_build\device\nxp\imx8m\evk_8mp\init.rc
+5.ref 2.3 Others (20241129 移除)
+  Y:\project\imx8m_android\imx-android\android_build\device\nxp\imx8m\evk_8mp\evk_8mp.mk
+  修改 WiFi HAL
+6.Add android.hardware.wifi.xml
+  evk_8mp.mk 已做
+  frameworks/native/data/etc/android.hardware.wifi.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.xml \
+7.Add android.hardware.wifi.direct.xml
+  evk_8mp.mk 已做
+  frameworks/native/data/etc/android.hardware.wifi.direct.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.direct.xml \
+8.Set wifi.interface / Set wifi.direct.interface (先不做，init.rc已有)
+  evk_8mp.mk
+  PRODUCT_PROPERTY_OVERRIDES += \
+    wifi.interface=wlan0
+  PRODUCT_PROPERTY_OVERRIDES += \
+    wifi.direct.interface=p2p0
+9.wifi_hal 已有
+  frameworks/opt/net/wifi/libwifi_hal/Android.mk 
+10.Device manifest file 已有
+  $ANDROID_SDK/hardware/interface/wifi/1.6/default/android.hardware.wifi@1.0-service.xml
+  $ANDROID_SDK/external/wpa_supplicant_8/wpa_supplicant/aidl/android.hardware.wifi.supplicant.xml
+  $ANDROID_SDK/external/wpa_supplicant_8/hostapd/android.hardware.wifi.hostapd.xml
+11.Supplicant_overlay config file to evk_8mp.mk 已有
+  wifi/p2p_supplicant_overlay.conf
+  wifi/wpa_supplicant_overlay.conf
+12.System Resource Configurations (20241129 移除)
+  Y:\project\imx8m_android\imx-android\android_build\frameworks\base\core\res\res\values\config.xml
+	<string-array translatable="false" name="config_tether_wifi_regexs">
+		<item>"wlan0"</item>
+    </string-array>
+	<integer-array translatable="false" name="config_tether_upstream_types">
+        <item>1</item>
+		<item>9</item>
+        <item>7</item>
+        <item>0</item>
+    </integer-array>
+	<bool name="config_enableWifiDisplay">true</bool>
+######################################################################################################################
+11/15
+
+--- rtl8852 driver
+1.複製 X:\project\test\20241112_8852_android\1.19.11\RTL8852BE_WiFi_linux_v1.19.11-218-gbe75dfc54.20240726\driver\rtl8852BE_WiFi_linux_v1.19.11-218-gbe75dfc54.20240717
+  到 imx8_android/imx-android-13.0.0_2.0.0/android_build/vendor/nxp-opensource/kernel_imx/drivers/net/wireless/realtek/rtl8852be
+2.改 Makefile 增加 obj-$(CONFIG_RTL8852BE) += rtl8852be/
+     Kconfig  增加 source "drivers/net/wireless/realtek/rtl8852be/Kconfig"
+3..config 增加 CONFIG_RTL8852BE=m
+  目前增加無顯示 
+  - android_defconfig - is ${MY_ANDROID}/vendor/nxp-opensource/kernel_imx/arch/arm64/configs/android_defconfig
+  - android_addition_defconfig - is on the same folder ${MY_ANDROID}/device/fsl/imx8m/evk_8mm/
+######################################################################################################################
+11/18
+
+1.安裝10.x toolchain
+https://developer.arm.com/downloads/-/gnu-a
+https://www.wpgdadatong.com/blog/detail/74061
+2.Version 10.3-2021.07
+  sudo tar -xvJf gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
+  export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+  Version 11.2-2022.02
+  sudo tar -xvJf gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
+  export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+  Version 13.2.Rel1
+  sudo tar -xvJf arm-gnu-toolchain-13.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
+  export AARCH64_GCC_CROSS_COMPILE=/opt/arm-gnu-toolchain-13.2.Rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+  sudo tar -xvJf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
+3.增加kernel config
+  在 kernel_imx目錄下 
+      - make gki_defconfig 存檔建立目前default config 的.config
+	  - make menuconfig 將8852be設定打開 (要先設定好realtek 8852相關kconfig,makefile))
+	  - make savedefconfig 建立包含8852的default config
+	  - 將包含8852 defconfig 複製到 ${MY_ANDROID}/vendor/nxp-opensource/kernel_imx/arch/arm64/configs/gki_defconfig
+	                               ${MY_ANDROID}/vendor/nxp-opensource/kernel_imx/arch/arm64/configs/defconfig
+	  - make mrproper
+4.編譯錯誤  詢問Enli
+5.https://community.nxp.com/t5/i-MX-Processors/How-to-Build-Cross-Compile-Toolchains-For-i-MX8M/m-p/782981
+  (How to Build Cross Compile Toolchains For i.MX8M)
+$ sudo apt-get install gcc-aarch64-linux-gnu
+Export the environment variables:
+$ export ARCH=arm64
+$ export CROSS_COMPILE=/usr/bin/aarch64-linux-gnu-
+######################################################################################################################
+11/19
+
+--- rtl8522be
+1.修改makefile
+2.include/rtw_byteorder.h (CONFIG_LITTLE_ENDIAN 沒有define的問題)
+    #ifndef CONFIG_LITTLE_ENDIAN 
+    #define CONFIG_LITTLE_ENDIAN 
+3.ioctl_cfg80211.c (對應不同kernel version，參數不對的問題，硬改)
+    cfg80211_ch_switch_started_notify
+4.wifi_regd.c (對應不同kernel version，參數不對的問題，硬改)
+    cfg80211_ch_switch_notify
+5.rtw_wlan_util.c (每個case後都要break)
+6.缺少 platform 相關include(makefile 增加src指向rtl8852be目錄，DRV_PATH也要修改)
+7.修改相關設定同Albert Makefile
+8.ioctl_cfg80211.c 移除punct_bitmap定義問題
+    
+######################################################################################################################
+11/20
+
+--- rtl8522be
+1.參考jason增加 arm_nxp.mk platform_ARM_NXP_pci.c
+2.apt-cache search aarch64
+  sudo apt install gcc-12-aarch64-linux-gnu
+  
+######################################################################################################################
+11/21
+
+--- yocto toolchain
+https://dannysun-unknown.blogspot.com/2021/11/yocto-project-toolchain-toolchain.html
+(Yocto Project 如何編譯出 ToolChain，如何使用 Toolchain編譯)
+1.bitbake meta-toolchain
+2.cd Z:\project\imx8m_plus\pico\imx8mplus_build\tmp\deploy\sdk
+3../fsl-imx-wayland-glibc-x86_64-meta-toolchain-armv8a-imx8mpevk-toolchain-6.1-langdale.sh -d /opt/
+4.source /opt/environment-setup-aarch64-poky-linux
+
+https://www.wpgdadatong.com/blog/detail/74100
+(NXP i.MX Android BSP 開發環境架設 含相關tool chain,bsp下載)
+
+######################################################################################################################
+11/29
+
+--- OTA 更新方式加入
+OTA 異常
+1.參考 7.1.4 Building an OTA package for single-bootloader image
+  android_build/device/nxp/imx8m/evk_8mp/AndroidBoard.mk
+    #BOARD_PACK_RADIOIMAGES += bootloader.img
+    #INSTALLED_RADIOIMAGE_TARGET  += $(PRODUCT_OUT)/bootloader.img
+  android_build/device/nxp/imx8m/evk_8mp/BoardConfig.mk
+    #AB_OTA_PARTITIONS += bootloader
+	
+增加 OTA_usb_chk.sh呼叫tool
+1.vendor/aaeon/OTA_usb_chk.sh
+2.android_build/device/nxp/imx8m/evk_8mp/evk_8mp.mk
+3.\imx-android\android_build\system\core\rootdir\init.rc
+
+######################################################################################################################
+11/29
+
+--- android 新專案
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+######################################################################################################################
+12/2
+
+--- 復原
+1.將11/12修改部分加入
+2.將11/13修改部分加入
+3.取得目前SELinux狀態
+  getenforce
+4.SELinux強制關閉改
+  X:\project\imx8pl_android\android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk
+  BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive
+  
+--- rs485
+1.參考 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Albert\20241112_imx8pl_patch\kernel_1112.diff
+  /drivers/tty/serial/imx.c
+2.
+
+---a1.0 RS485測試
+1.PIN腳接法:
+  PIN 2 🡪 PIN 11
+  PIN 3 🡪 PIN 12
+2.使用RS485_test1R.sh #./RS485_test2R.sh
+  裡面set mode要對調
+3.修改imx.c後測試fail
+4.修改mode為010 更新測試程式
+######################################################################################################################
+12/4
+
+--- RS485
+1.依照jason更新mode設定
+  # TX enable, low active, with termination resistor
+gpioset 0 7=0
+gpioset 0 8=1
+gpioset 0 12=0
+ 
+gpioset 0 14=0
+gpioset 2 22=1
+gpioset 2 21=0
+
+ 
+# TX enable, low active, with termination resistor
+gpioset 0 7=1
+gpioset 0 8=1
+gpioset 0 12=0
+ 
+gpioset 0 14=1
+gpioset 2 22=1
+gpioset 2 21=0
+
+2.開機就設定010
+3.建立備份於 /home/fox/project/imx8pl_android/android_build_bk
+
+
+--- 8852 test
+1.複製 rtw89 到X:\project\imx8pl_android\android_build\out\target\product\evk_8mp\vendor\firmware\
+2.進行測試 訊息相同
+######################################################################################################################
+12/09
+
+--- xz
+1.壓縮 tar Jcvf FileName.tar.xz DirName
+  解壓 tar Jxvf FileName.tar.xz
+  
+--- 安裝anydesk
+https://medium.com/@scofield44165/ubuntu-20-04%E4%B8%AD%E5%AE%89%E8%A3%9Danydesk-install-anydesk-in-ubuntu-20-04-3bddaa245d65
+wget -qO - https://keys.anydesk.com/repos/DEB-GPG-KEY | sudo apt-key add -
+echo "deb http://deb.anydesk.com/ all main" | sudo tee /etc/apt/sources.list.d/anydesk-stable.list
+sudo apt update
+sudo apt install anydesk
+anydesk --version
+anydesk
+
+--- 燒錄異常問題
+1.與Enli反應
+  解壓縮後燒錄會卡在uboot階段
+2.比對燒錄檔案數正確
+
+######################################################################################################################
+12/11
+
+--- Enli patch
+1.置入 20241211_enli_patch 於 /home/fox/project/imx8pl_android/android_build
+  原始備份檔於 /home/fox/project/test/20241211_enli_patch/_to_customer/org_bk
+  
+
+######################################################################################################################
+12/17
+
+--- wifi
+https://blog.csdn.net/zalebool/article/details/138532385?ops_request_misc=%257B%2522request%255Fid%2522%253A%252229d8da636d6aed82749f6068e854d193%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=29d8da636d6aed82749f6068e854d193&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-1-138532385-null-null.142^v100^pc_search_result_base8&utm_term=imx8p%20%E5%AE%89%E5%8D%93%20pcie&spm=1018.2226.3001.4187
+(NXP i.MX8系列平台开发讲解 - 3.11 Linux PCIe设备调试(WIFI模块))
+https://blog.csdn.net/u011557327/article/details/128788389?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522a6ded79df933ba5dc2e5fa0c67dc577f%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=a6ded79df933ba5dc2e5fa0c67dc577f&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-4-128788389-null-null.142^v100^pc_search_result_base8&utm_term=nxp%20android%20pcie&spm=1018.2226.3001.4187
+(NXP imx8mp android11.0 ap6212 wifi调试)
+https://download.csdn.net/download/l0405235/88326896?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522a6ded79df933ba5dc2e5fa0c67dc577f%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=a6ded79df933ba5dc2e5fa0c67dc577f&biz_id=1&utm_medium=distribute.pc_search_result.none-task-download-2~all~first_rank_ecpm_v1~rank_v31_ecpm-1-88326896-null-null.142^v100^pc_search_result_base8&utm_term=nxp%20android%20pcie&spm=1018.2226.3001.4187.2
+(android13 wifi 移植文档)
+
+--- check pcie
+https://community.nxp.com/t5/i-MX-Processors/Using-PCIe-on-i-MX8MP-with-internal-clock-on-Linux-imx-6-1-36/m-p/1765759
+(Using PCIe on i.MX8MP with internal clock on Linux-imx 6.1.36)
+
+1.確認 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Albert\20240906_8pl_pcie_patch
+  確認上面網址連結修改，不照搬Albert patch
+  修改 imx8mp.dtsi ,imx8mp-blk-ctrl.c , fsl,imx8mp-hsio-blk-ctrl.yaml
+  
+2.imx8mp-blk-ctrl.c 有兩個編譯error修正
+
+3.imx8mp-blk-ctrl.c修改會造成開機kernel卡住
+4.確認公版在default code下 lspci有訊息
+5.量測 PCIe_nWAKE_3V3 R2649(靠近usb第一顆) 有3.3v
+       PCIE_CLKP  R9292(靠近usb第三顆)
+	   PCIE_CLKN  R9293(靠近usb第四顆)
+
+
+--- enli疑問
+1.X:\project\imx8pl_android\android_build\out\target\product\evk_8mp\system_dlkm\lib\modules\6.1.25-android14-11-maybe-dirty
+  看到android14
+  
+######################################################################################################################
+12/18
+
+--- pcie
+1.複製 android_bk => android_org
+2.還原成公版狀態 git reset --hard (!!不能使用，官方編譯完處於no branch狀態，返回會回到其他專案)
+3.11/12 還原 uboot
+               - uart2->uart4
+               - android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk
+        還原 BOARD_BOOTCONFIG += androidboot.console=ttymxc3 => ttymxc1
+		還原 imx-atf
+		 
+4.修改uboot直接參考git diff修改回原狀態後編譯
+  lpddr4.c可直接使用yocto專案lpddr4.c
+  
+--- 修改imx8pl_android/android_build/vendor/nxp-opensource/uboot-imx
+1.備份到/home/fox/project/imx8pl_android/bk/uboot_modify_file
+        modified:   arch/arm/dts/imx8mp-evk-u-boot.dtsi
+        modified:   arch/arm/dts/imx8mp-evk.dts
+        modified:   board/freescale/imx8mp_evk/imx8mp_evk.c
+        modified:   board/freescale/imx8mp_evk/lpddr4_timing.c
+        modified:   configs/imx8mp_evk_android_defconfig
+        modified:   configs/imx8mp_evk_android_dual_defconfig
+        modified:   configs/imx8mp_evk_android_powersave_defconfig
+        modified:   configs/imx8mp_evk_android_trusty_defconfig
+        modified:   configs/imx8mp_evk_android_trusty_dual_defconfig
+        modified:   configs/imx8mp_evk_android_trusty_powersave_dual_defconfig
+        modified:   configs/imx8mp_evk_android_trusty_secure_unlock_dual_defconfig
+        modified:   configs/imx8mp_evk_android_uuu_defconfig
+        modified:   configs/imx8mp_evk_defconfig
+        modified:   configs/imx8mp_evk_inline_ecc_defconfig
+        modified:   configs/imx8mp_evk_ndm_defconfig
+        modified:   include/configs/imx8mp_evk.h
+2.複製 /home/fox/project/imx8pl_android/android_build_org 內uboot(已改回org狀態)
+
+######################################################################################################################
+12/19
+
+--- imx8pl_android/android_build
+1.uboot回原本版本 需再改回修改版本
+  2024/12/20 已回復
+2.依照patch加入修改
+  - Documentation/devicetree/bindings/soc/imx/fsl,imx8mp-hsio-blk-ctrl.yaml
+  - arch/arm64/boot/dts/freescale/imx8mp.dtsi
+  - drivers/soc/imx/imx8mp-blk-ctrl.c
+
+--- imx8pl_android/android_build_uboot/android_build
+從原始code開始增加
+1.evk確認有lspci訊息
+2.增加uart4
+        uboot
+           - arch/arm/dts/imx8mp-evk-u-boot.dtsi
+		   - arch/arm/dts/imx8mp-evk.dts
+		   - board/freescale/imx8mp_evk/imx8mp_evk.c
+		   - board/freescale/imx8mp_evk/lpddr4_timing.c
+		   - include/configs/imx8mp_evk.h
+		atf 
+		   - plat/imx/imx8m/imx8mp/imx8mp_bl31_setup.c
+		   - plat/imx/imx8m/imx8mp/platform.mk
+		kernel
+		   - arch/arm64/boot/dts/freescale/imx8mp-ab2.dts
+		   - arch/arm64/boot/dts/freescale/imx8mp-evk-root.dts
+		   - arch/arm64/boot/dts/freescale/imx8mp-evk.dts
+        android
+		   - android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk
+              BOARD_BOOTCONFIG += androidboot.console=ttymxc3
+			  
+    =>結果出現 phy phy-32f00000.pcie-phy.5: phy poweron failed --> -110
+	
+3.僅修改 kernel DTS pinmux
+    =>結果同上
+4.修改clock 訊號源，轉為內部訊號
+    =>結果出現probe of 32f00000.pcie-phy failed with error -2
+5.依照pacth修改
+      - Documentation/devicetree/bindings/soc/imx/fsl,imx8mp-hsio-blk-ctrl.yaml
+	  - arch/arm64/boot/dts/freescale/imx8mp.dtsi
+	  - drivers/soc/imx/imx8mp-blk-ctrl.c
+6.增加usb patch for 燒錄
+      - arch/arm/dts/imx8mp-evk.dts
+	  - configs/...
+
+--- imx8pl_android/android_build_org
+從Enli版本開始減少
+1.還原 uboot
+        - uart2->uart4
+  還原 kernel
+        -
+  還原 android
+        - android_build\device\nxp\imx8m\evk_8mp\BoardConfig.mk
+           BOARD_BOOTCONFIG += androidboot.console=ttymxc3 => ttymxc1
+  還原 imx-atf
+  
+  =>公版開機，結果相同
+  =>無用，2024/12/23 刪除
+  
+######################################################################################################################
+12/20
+
+--- new symbols
+https://community.nxp.com/t5/i-MX-Processors-Knowledge-Base/Export-new-symbols-of-GKI-development-Android-14/ta-p/1867360
+(Export new symbols of GKI development Android 14)
+https://community.nxp.com/t5/i-MX-Processors-Knowledge-Base/Export-new-symbols-of-GKI-development/ta-p/1682710
+(Export new symbols of GKI development)
+
+--- segmentation patch
+1.imx8mp_blk_ctrl_data pass
+2.include define       pass
+3.probe = imx8mp_hsio_blk_ctrl_probe,  移除fail
+4.imx8mp_hsio_blk_ctrl_probe 移除pass
+5.clk_hsio_pll_prepare     return 1;
+  clk_hsio_pll_is_prepared return 1;
+  [   14.961737] imx6q-pcie 33800000.pcie: host bridge /soc@0/pcie@33800000 ranges:
+  [   14.969894] imx6q-pcie 33800000.pcie:       IO 0x001ff80000..0x001ff8ffff -> 0x0000000000
+  [   14.978839] imx6q-pcie 33800000.pcie:      MEM 0x0018000000..0x001fefffff -> 0x0018000000
+  [   14.988349] imx6q-pcie 33800000.pcie: pcie PHY power up failed
+6.確認是 regmap_test_bits 造成卡住，return 1就能運作。
+
+
+######################################################################################################################
+12/23
+
+--- GKI
+1.複製 android_build_bk 到 android_build_gki  (2024/12/27刪除)
+  驗證 step 
+2.step
+
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_gki
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+mkdir gki (不能在android_build目錄下)
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android13-5.10
+repo sync
+BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+The GKI Image is built as gki/out/android13-5.15/common/arch/arm64/boot/Image
+
+cd common
+rm -r ./*
+cp ${MY_ANDROID}/vendor/nxp-opensource/kernel_imx/* ./
+
+cd ..
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+
+BUILD_FOR_GKI=yes BUILD_CONFIG=common/build.config.imx EXT_MODULES_MAKEFILE="verisilicon_sw_isp_vvcam/vvcam/v4l2/Kbuild" EXT_MODULES="nxp-mwifiex/mxm_wifiex/wlan_src" build/build_abi.sh --update-symbol-list -j8
+BUILD_FOR_GKI=yes BUILD_CONFIG=common/build.config.imx EXT_MODULES_MAKEFILE="verisilicon_sw_isp_vvcam/vvcam/v4l2/Kbuild" EXT_MODULES="nxp-mwifiex/mxm_wifiex/wlan_src" build/build_abi.sh --update-symbol-list -j8
+######################################################################################################################
+12/25
+
+--- blk ctrl nxp patch
+1.C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Fox\20241225_android_nxp_patch\blk_ctrl_for_internal_pll.patch
+2.imx8pl_android/android_build_uboot/android_build 修改
+
+--- gki
+1.重新下載android13文件，官方11/15有更新
+2.測試
+mkdir gki (不能在android_build目錄下)
+cd gki
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+rm -rf ./*  (git -> ../.repo/projects/common.git)
+cp -rf ${MY_ANDROID}/vendor/nxp-opensource/kernel_imx/* ./
+
+cd ..
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cd gki
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+
+=> 編譯錯誤問題
+   修改 gki\common\include\uapi\linuxmxc_asrc.h
+               +#include <stdint.h>
+               +#include <alsa/asoundlib.h>
+=> 找不到'alsa/asoundlib.h' file not found
+   sudo apt-get install libasound2-dev
+
+--- org版本編譯
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_org/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+
+######################################################################################################################
+12/27
+
+--- gki2
+mkdir gki
+cd gki
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+cd ..
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s ${MY_ANDROID}/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+
+tools/bazel run //common:kernel_aarch64_dist
+
+cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+
+cd gki
+cp out/kernel_aarch64/dist/system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/system_dlkm_staging_archive.tar.gz
+cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+
+cd ${MY_ANDROID}
+make system_dlkmimage
+
+=>Symbols missing TKT340553_SW_WORKAROUND
+  vim common/android/abi_gki_aarch64_imx 
+        # TKT340553_SW_WORKAROUND
+
+=>ERROR: protected exports list must be updated before updating ABI definition.
+  tools/bazel run @//common:kernel_aarch64_abi_update_protected_exports
+
+
+######################################################################################################################
+12/31
+
+--- enli patch update
+1.放置 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\Fox\20241231_enli_8852
+       /home/fox/project/test/20241231_enli_8852
+2.依照/home/fox/project/test/20241231_enli_8852/readme__kernel_imx的修改(v002).txt 
+  加到 /home/fox/project/imx8pl_android/android_build_org/android_build
+
+--- gki3
+mkdir gki3
+cd gki3
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+依照 /home/fox/project/test/20241231_enli_8852/readme__kernel_imx的修改(v002).txt 加到common/
+複製 /home/fox/project/test/20241231_enli_8852/part2/rtl8852BE 到driver
+修改 common/imx.bzl 
+        =>新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+
+tools/bazel run //common:kernel_aarch64_dist
+
+ERROR:TKT340553_SW_WORKAROUND
+       =>vi common/android/abi_gki_aarch64_imx 
+         移除 TKT340553_SW_WORKAROUND
+ERROR: protected exports list must be updated before updating ABI definition.
+       =>執行 tools/bazel run @//common:kernel_aarch64_abi_update_protected_exports
+
+
+######################################################################################################################
+1/2
+
+/home/fox/project/imx8pl_android/android_build
+
+--- pcie patch加入修改
+  - Documentation/devicetree/bindings/soc/imx/fsl,imx8mp-hsio-blk-ctrl.yaml
+  - arch/arm64/boot/dts/freescale/imx8mp.dtsi
+  - drivers/soc/imx/imx8mp-blk-ctrl.c
+  
+--- Enli 8852 patch 加入
+  - kernel_imx\drivers\bluetooth\
+       Makefile, Kconfig, rtk_btusb.c, rtk_btusb.h
+  - kernel_imx\drivers\net\wireless\realtek\
+       Makefile, Kconfig,/home/fox/project/test/20241231_enli_8852/part2/rtl8852BE
+  - kernel_imx/arch/arm64/configs/gki_defconfig (用default的不修改)
+  - kernel_imx/arch/arm64/configs/imx8mp_gki.fragment
+  - android_build/device/nxp/imx8m/evk_8mp/SharedBoardConfig.mk
+
+--- 放入GKI 
+  - 先參考 12/31 --- gki3 編出 abi_gki_aarch64.stg
+  - abi_gki_aarch64.stg
+      將  Z:\project\imx8pl_android\android_build_org\gki3\common\android\abi_gki_aarch64.stg
+      放入Z:\project\imx8pl_android\android_build\vendor\nxp-opensource\kernel_imx\androidabi_gki_aarch64.stg
+  - boot.img
+      cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+      cd ${MY_ANDROID}
+      TARGET_IMX_KERNEL=true make bootimage
+  - system_dlkm.img
+      cp system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fslproprietary/gki/system_dlkm_staging_archive.tar.gz
+      cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+      tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+      cd ${MY_ANDROID}
+      make system_dlkmimage
+	  
+--- 開機error:reboot: Restarting system with command 'bootloader'
+1. https://community.nxp.com/t5/i-MX-Processors/imx8mp-based-custom-board-fail-to-load-kernel-of-android-13/m-p/1759001#M215881
+(imx8mp based custom board fail to load kernel of android-13)
+2.先還原 OTA 異常修改，確認是否AB區造成 (一樣會重開機，應該不是此造成，已還原)
+  android_build/device/nxp/imx8m/evk_8mp/AndroidBoard.mk
+    #BOARD_PACK_RADIOIMAGES += bootloader.img
+    #INSTALLED_RADIOIMAGE_TARGET  += $(PRODUCT_OUT)/bootloader.img
+  android_build/device/nxp/imx8m/evk_8mp/BoardConfig.mk
+    #AB_OTA_PARTITIONS += bootloader
+3.使用gki2用全原廠方式編譯出來看狀況
+  a.備份檔 Z:\project\imx8pl_android\android_build_org\bk_0102
+  b.更換 abi_gki_aarch64.stg ,boot.img ,system_dlkm.img
+  c.一樣會重開
+  
+
+######################################################################################################################
+1/3
+
+--- gki觀念參考
+C:\Users\FoxYang\OneDrive - AAEON Technology\文件\NXP\Android\i.MX Android12 GKI development tips.pdf
+
+--- 測試
+1./home/fox/project/imx8pl_android/android_build/
+  直接下TARGET_IMX_KERNEL=true make bootimage後燒錄
+  kernel開到一半卡住
+2.依照 i.MX Android12 GKI development tips.pdf 測試ph.18
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android13-5.15-2022-06
+repo sync
+=>無法下載
+3./home/fox/project/imx8pl_android/android_build_org
+cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+cp system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fslproprietary/gki/system_dlkm_staging_archive.tar.gz
+cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+cd ${MY_ANDROID}
+make system_dlkmimage
+=>測試evk default僅作上面 一樣重開
+######################################################################################################################
+1/6
+
+--- 測試 /home/fox/project/imx8pl_android/android_build_uboot/android_build/
+
+1.原都正常專案
+TARGET_IMX_KERNEL=true make bootimage
+make system_dlkmimage
+./imx-make.sh -j4 2>&1
+=>可正常開機
+
+2.測試替換bootimage
+cp {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img  bk_0106/boot.img
+cp gki3/out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+TARGET_IMX_KERNEL=true make bootimage
+./imx-make.sh -j4 2>&1
+=>出現reboot現象
+
+cp bk_0106/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+TARGET_IMX_KERNEL=true make bootimage
+./imx-make.sh -j4 2>&1
+=>可正常開機
+
+3.
+make system_dlkmimage
+./imx-make.sh -j4 2>&1
+
+
+3.測試替換dlkmimage
+
+--- evk test /home/fox/project/imx8pl_android/android_build_evk
+1.新增
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_evk/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+######################################################################################################################
+1/7
+
+--- 測試evk /home/fox/project/imx8pl_android/android_build_evk
+1.測試替換bootimage
+cp {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img  bk_0107/boot.img
+cp gki3/out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+./imx-make.sh -j4 2>&1
+cd ${MY_ANDROID}/out/target/product/evk_8mp
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
+=>出現reboot現象
+
+cp bk_0107/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+./imx-make.sh -j4 2>&1
+cd ${MY_ANDROID}/out/target/product/evk_8mp
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
+=>正常開機
+
+--- 使用gki android13
+1.測試 gki_5.15
+mkdir gki
+cd gki
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android13-5.15
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+依照 /home/fox/project/test/20241231_enli_8852/readme__kernel_imx的修改(v002).txt 加到common/
+複製 /home/fox/project/test/20241231_enli_8852/part2/rtl8852BE 到driver
+修改 common/imx.bzl 
+        =>新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+
+tools/bazel run //common:kernel_aarch64_dist
+
+ERROR:TKT340553_SW_WORKAROUND
+       =>vi common/android/abi_gki_aarch64_imx 
+         移除 TKT340553_SW_WORKAROUND
+ERROR: protected exports list must be updated before updating ABI definition.
+       =>執行 tools/bazel run @//common:kernel_aarch64_abi_update_protected_exports
+
+2.測試gki_6.1
+mkdir gki_6.1
+cd gki_6.1
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.2.0
+#git fetch device --tags --force && git checkout android14-6.1
+
+#依照 /home/fox/project/test/20241231_enli_8852/readme__kernel_imx的修改(v002).txt 加到common/
+#複製 /home/fox/project/test/20241231_enli_8852/part2/rtl8852BE 到driver
+#修改 common/imx.bzl 
+#        =>新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build_org/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+
+tools/bazel run //common:kernel_aarch64_dist
+
+ERROR:TKT340553_SW_WORKAROUND
+       =>vi common/android/abi_gki_aarch64_imx 
+         移除 TKT340553_SW_WORKAROUND
+ERROR: protected exports list must be updated before updating ABI definition.
+       =>執行 tools/bazel run @//common:kernel_aarch64_abi_update_protected_exports
+
+
+######################################################################################################################
+1/8
+
+--- download
+https://pan.baidu.com/s/1ypeYGbNMkTxt-7PefWDklA?pwd=fnyy
+
+--- whiltlist check
+1.複製 gki_6.1/out/bazel/output_user_root/106f916d7d035c8e318dcd28fa26d722/execroot/__main__/bazel-out/k8-fastbuild-ST-9a82732d9a6a/bin/common/kernel_aarch64/vmlinux
+  到   gki_6.1/build/kernel/abi
+  複製 ko 到 gki_6.1/build/kernel/abi
+  執行 ./extract_symbols --whitelist out.whitelist
+######################################################################################################################
+1/9
+
+--- 測試evk /home/fox/project/imx8pl_android/android_build_evk
+1.gki_6.1_r17 測試替換bootimage kernel “android14-6.1-2023-10_r17”
+mkdir gki_6.1_r17
+cd gki_6.1_r17
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo init -u https://android.googlesource.com/kernel/manifest -b android14-6.1-2023-10_r17 => Unable to sync
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+#git fetch device --tags --force && git checkout android14-6.1-2023-10_r17 => ERROR: Skipping '//common:imx_abi_update_symbol_list': no such target '
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build_evk/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build_evk/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout android14-6.1-2023-10_r17
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+tools/bazel run //common:kernel_aarch64_dist
+
+=> ERROR: Skipping '//common:imx_abi_update_symbol_list': no such target '
+   用tools/bazel query "//common:*" |grep imx_abi_update_symbol_list 掃沒有此功能
+   但在gki_6.1是有的
+   
+=> ERROR:TKT340553_SW_WORKAROUND
+   vi common/android/abi_gki_aarch64_imx 
+   移除 TKT340553_SW_WORKAROUND
+   
+=> ERROR: protected exports list must be updated before updating ABI definition.
+   執行 tools/bazel run @//common:kernel_aarch64_abi_update_protected_exports
+   
+cp gki_6.1_r17/out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+   
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+./imx-make.sh -j4 2>&1
+cd ${MY_ANDROID}/out/target/product/evk_8mp
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
+
+=> 能開機
+=> 已還原
+
+2.還原GKI 要測試8997
+
+--- export_symbol
+1.參考 https://blog.51cto.com/u_15330368/3429706
+  請Jack driver增加extern
+  
+--- NXP evk wi-fi Azurewave CM276(NXP 88W8997)
+1.測試EVK能連線
+
+--- 延續 1/2  /home/fox/project/imx8pl_android/android_build
+1.放入GKI 
+  - 先參考 1/9 --- 測試evk /home/fox/project/imx8pl_android/android_build_evk/gki_6.1_r17
+  - abi_gki_aarch64.stg
+      將  /home/fox/project/imx8pl_android/android_build_evk/gki_6.1_r17/common/android/abi_gki_aarch64.stg
+      放入Z:\project\imx8pl_android\android_build\vendor\nxp-opensource\kernel_imx\androidabi_gki_aarch64.stg
+  - boot.img
+      cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+      cd ${MY_ANDROID}
+      TARGET_IMX_KERNEL=true make bootimage
+  - system_dlkm.img
+      cp system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fslproprietary/gki/system_dlkm_staging_archive.tar.gz
+      cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+      tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+      cd ${MY_ANDROID}
+      make system_dlkmimage
+=> 重開機
+
+
+######################################################################################################################
+1/10
+
+--- 測試8897 
+1.改用 /home/fox/project/imx8pl_android/android_build_uboot/android_build
+   => 12/19 修改應只有evk code + uart +ddr+internal patch
+2.修改 android_build_uboot/android_build / kernel imx8mp_evk.dts 增加usb功能
+  => 測試能連線
+  
+--- 接續1/9 測試evk /home/fox/project/imx8pl_android/android_build_evk
+- boot.img
+      cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+      cd ${MY_ANDROID}
+      TARGET_IMX_KERNEL=true make bootimage
+  - system_dlkm.img
+      cp system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fslproprietary/gki/system_dlkm_staging_archive.tar.gz
+      cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+      tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+      cd ${MY_ANDROID}
+      make system_dlkmimage
+=> 測試能開機
+
+######################################################################################################################
+1/13
+
+--- 測試r17新板
+1.0113刪除 /home/fox/project/imx8pl_android/android_build_org
+      複製 /home/fox/project/imx8pl_android/android_build_bk => android_build_0113
+	  備份 bk_0114
+	  建立 gki_0114
+2.測試 gki_6.1_r17
+mkdir gki_0114
+cd gki_0114
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build_0113/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build_0113/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout android14-6.1-2023-10_r17
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+
+=> ERROR:TKT340553_SW_WORKAROUND
+   vi common/android/abi_gki_aarch64_imx 
+   移除 TKT340553_SW_WORKAROUND
+   
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+tools/bazel run //common:kernel_aarch64_dist
+   
+cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+cd ${MY_ANDROID}
+TARGET_IMX_KERNEL=true make bootimage
+
+cp out/kernel_aarch64/dist/system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/system_dlkm_staging_archive.tar.gz
+cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+cd ${MY_ANDROID}
+make system_dlkmimage
+
+./imx-make.sh -j4 2>&1
+
+=> 確認能開機
+
+######################################################################################################################
+1/14
+
+--- base android_build_0113 增加8852BE driver
+   -- pcie patch加入修改
+     - Documentation/devicetree/bindings/soc/imx/fsl,imx8mp-hsio-blk-ctrl.yaml
+     - arch/arm64/boot/dts/freescale/imx8mp.dtsi
+     - drivers/soc/imx/imx8mp-blk-ctrl.c
+  
+   -- Enli 8852 patch 加入
+     - kernel_imx\drivers\bluetooth\
+       Makefile, Kconfig, rtk_btusb.c, rtk_btusb.h
+     - kernel_imx\drivers\net\wireless\realtek\
+          Makefile, Kconfig,/home/fox/project/test/20241231_enli_8852/part2/rtl8852BE
+     - kernel_imx/arch/arm64/configs/gki_defconfig (用default的不修改)
+     - kernel_imx/arch/arm64/configs/imx8mp_gki.fragment
+     - android_build/device/nxp/imx8m/evk_8mp/SharedBoardConfig.mk
+
+   -- 放入GKI 
+     - 先參考 12/31 --- gki3 編出 abi_gki_aarch64.stg
+	     修改 common/imx.bzl 
+          =>新增 "drivers/bluetooth/rtk_btusb.ko",
+	             "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+	     編譯路徑為 gki_enli
+     - abi_gki_aarch64.stg
+         將  Z:\project\imx8pl_android\android_build_org\gki3\common\android\abi_gki_aarch64.stg
+         放入Z:\project\imx8pl_android\android_build\vendor\nxp-opensource\kernel_imx\androidabi_gki_aarch64.stg
+     - boot.img
+         cp out/kernel_aarch64/dist/boot.img {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki/boot.img
+         cd ${MY_ANDROID}
+         TARGET_IMX_KERNEL=true make bootimage
+     - system_dlkm.img
+         cp system_dlkm_staging_archive.tar.gz {MY_ANDROID}/vendor/nxp/fslproprietary/gki/system_dlkm_staging_archive.tar.gz
+         cd {MY_ANDROID}/vendor/nxp/fsl-proprietary/gki
+         tar -xzf system_dlkm_staging_archive.tar.gz -C system_dlkm_staging
+         cd ${MY_ANDROID}
+         make system_dlkmimage
+		 
+	=>重開機
+	
+   -- 將GKI相關patch還原
+    =>重開機
+   -- 將 imx8mp_gki.fragment,SharedBoardConfig.mk 還原
+    =>正常開機
+   -- 
+--- 
+
+######################################################################################################################
+1/15
+
+--- 8997 image
+1.使用 /home/fox/project/imx8pl_android/android_build_0113
+  移除8852相關patch
+  
+2.修正imx8mp-evk.dts
+3. android_build_0113 釋出v02版本
+
+######################################################################################################################
+1/17
+
+--- 測試gki_0117
+mkdir gki_0117
+cd gki_0117
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+#依照 /home/fox/project/test/20241231_enli_8852/readme__kernel_imx的修改(v002).txt 加到common/
+#複製 /home/fox/project/test/20241231_enli_8852/part2/rtl8852BE 到driver
+#修改 common/imx.bzl 
+#        =>新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout android14-6.1-2023-10_r17
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+
+=> ERROR:TKT340553_SW_WORKAROUND
+   vi common/android/abi_gki_aarch64_imx 
+   移除 TKT340553_SW_WORKAROUND
+   
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+tools/bazel run //common:kernel_aarch64_dist
+
+=>stg沒看到symbol,疑似忘了 新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+
+--- 測試gki_0117II
+1.git checkout aosp/android14-6.1
+
+######################################################################################################################
+1/20
+
+--- 測試原本程序
+mkdir gki_a14
+cd gki_a14
+repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1
+repo sync
+
+cd common
+git remote add device https://github.com/nxp-imx/linux-imx
+git remote update
+git fetch device --tags --force && git checkout android-13.0.0_2.0.0
+
+依照 /home/fox/project/test/20250120_8852/readme.txt 加到common/
+複製 /home/fox/project/test/20250120_8852/wifi/rtl8852BE 到driver
+     imx8mp_gki.fragment複製到arch/arm64/configs/imx8mp_gki.fragment
+修改 common/imx.bzl 
+        =>新增 "drivers/net/wireless/realtek/rtl8852BE/8852be.ko",
+		       "drivers/bluetooth/rtk_btusb.ko",
+
+cd ..
+ln -s /home/fox/project/imx8pl_android/android_build/vendor/nxp-opensource/verisilicon_sw_isp_vvcam verisilicon_sw_isp_vvcam
+ln -s /home/fox/project/imx8pl_android/android_build/vendor/nxp-opensource/nxp-mwifiex nxp-mwifiex
+tools/bazel run //common:imx_abi_update_symbol_list
+
+cp common/android/abi_gki_aarch64_imx /tmp/abi_gki_aarch64_imx
+cd common
+git reset --hard
+git checkout aosp/android14-6.1
+cp /tmp/abi_gki_aarch64_imx android/abi_gki_aarch64_imx
+
+=> ERROR:TKT340553_SW_WORKAROUND
+   vi common/android/abi_gki_aarch64_imx 
+   移除 TKT340553_SW_WORKAROUND
+   
+cd ..
+tools/bazel run //common:kernel_aarch64_abi_update
+tools/bazel run //common:kernel_aarch64_dist
+
+=>確認stg有 proc_get_parent_data
+
+--- 測試r17程序
+mkdir gki_r17
+cd gki_r17
+
+差異 git checkout android14-6.1-2023-10_r17
+
+=>確認stg有 proc_get_parent_data
+
+--- 測試 r17版本GKI
+1.
+刪除 android_build
+複製 android_build_0113 => android_build_0120T
+
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_0120T
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+2.
+複製GKI 
+   boot.img system_dlkm_staging abi_gki_aarch64.stg abi_gki_aarch64_imx
+=>測試insmod 一樣有symbol問題
+Software Engineer
+3.android_build_0120T 2/20刪除
+######################################################################################################################
+2/5
+
+--- 清空間 刪除 android_build_evk/
+                android_build_uboot
+				android_build_bk
+######################################################################################################################
+3/27
+
+--- hw encode decode test
+1.https://community.nxp.com/t5/i-MX-Processors/imx8mp-android-gstreamer-hw-decode-and-encode-plugin/m-p/1637070
+  (imx8mp android gstreamer hw decode and encode plugin)
+  C:\Users\FoxYang\OneDrive - AAEON Technology\文件\NXP\Android\IMX_LINUX_USERS_GUIDE.pdf
+   7.3.3 Video encoding
+   https://community.nxp.com/t5/i-MX-Processors-Knowledge-Base/Android-MultiMedia-Framework/ta-p/1728701
+   (Android MultiMedia Framework)
+2. web加速測試網站
+   https://pixijs.com/
+
+######################################################################################################################
+3/31
+
+--- 新增支援大片lvds 
+於 imx8pl_android/android_build_0113 修改
+1.複製 panel-simple.c
+    從 fox-ubuntu Z:\project\imx8m_android\imx-android\android_build_bk\vendor\nxp-opensource\kernel_imx\drivers\gpu\drm\panel\panel-simple.c
+    到 fox-T2     X:\project\imx8pl_android\android_build_0113\vendor\nxp-opensource\kernel_imx\drivers\gpu\drm\panel
+	   原檔備份於 X:\project\imx8pl_android\bk\org\kernel
+2.參考 fox-ubuntu Z:\project\imx8m_android\imx-android\android_build_bk\vendor\nxp-opensource\kernel_imx\ 修改dts
+
+######################################################################################################################
+4/1
+
+--- hwcodec
+1.We use HW decoder on our BSP release, but to double check or want to change for testing purpose,
+ customer just need to update the vendor/etc/media_codecs.xml file to remove HW codecs.
+ /out/target/product/evk_8mp/vendor/etc/media_codecs.xml
+######################################################################################################################
+4/22
+
+--- ANR
+系統資源不足
+記憶體低、儲存空間爆滿或 CPU 使用率過高時，也可能導致 ANR。（App Not Responding）
+dd if=/dev/zero of=/data/swapfile bs=1M count=512
+
+--- apk
+1.aptoide 非googole官方應用商店
+  https://cn.aptoide.com/download?app_id=70007400&store_name=aptoide-web&entry_point=appstore_appview_header_desktop_v10&utm_medium=appview&utm_content=desktop&utm_source=web&utm_campaign=apkfy
+  在8pl上運作順暢  
+2.改使用 com-tiktok-tv.apk 
+  在 imx8pl android13下運作較順暢
+  但不能使用圓點退出 會出現ANR
+  直接按方框關閉
+  
+  dd if=/dev/zero of=/data/swapfile bs=1M count=3000
+  chmod 600 /data/swapfile
+  mkswap /data/swapfile
+  swapon /data/swapfile
+  cat /proc/swaps
+
+######################################################################################################################
+8/25
+
+--- IMX8PL 威海新北洋
+1.燒錄 Z:\project\imx8pl_android\android_build_0113
+2.usb cable CN147 失效 需再增加 
+   MX8MP_IOMUXC_SD1_DATA1__GPIO2_IO03         0x00000146
+3.依照文件測試 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\NXP\Android\IMX8PL\威海新北洋\SRG-IMX8PL_ANDROID_V01_RN.docx
+  RS232 RS485 pass
+4.mac 和 讀取工具
+  a).srgimx8cfg 放置vendor tool並於開機由aaeon.sh執行
+  b).\android_build\out\target\product\evk_8mp\vendor\usr\tool\srgimx8cfg
+     \android_build\out\target\product\evk_8mp\vendor\usr\tool\lancfg.sh
+  c).\android_build\system\core\rootdir\init.rc
+     \android_build\vendor\aaeon\aaeon.sh
+  d).# /data/local/tmp/tool/srgimx8cfg -0
+  e).參考 C:\Users\FoxYang\OneDrive - AAEON Technology\文件\1標準品交接\MyData\SRG-imx8mplus\schneider_eeprom_command .docx 
+     寫入mac
+	 
+######################################################################################################################
+9/9
+
+--- tlv320
+1.新增 imx8pl android 於 albert 6t disk
+
+2.AM62x Android 15 SDK is ready for EVM which use AIC3106 as audio codec. 
+  https://www.ti.com/tool/PROCESSOR-SDK-AM62X
+  a). doc
+      https://software-dl.ti.com/processor-sdk-android/esd/AM62X/10_01_01/docs/android/Overview_Building_the_SDK.html#downloading-sources
+	  https://software-dl.ti.com/processor-sdk-android/esd/AM62X/10_01_01/docs/android/Foundational_Components_Kernel.html#build-instructions
+  b). build
+      $ export YOUR_PATH=$PWD
+      $ mkdir ${YOUR_PATH}/ti-aosp-15 && cd $_
+      $ repo init -u https://git.ti.com/git/android/manifest.git -b android15-release -m releases/RLS_10_01_01.xml
+      $ repo sync
+	 
+	 
+  
+######################################################################################################################
+12/17
+
+--- Outset Medical 專案評估
+1.Android 16
+  https://www.nxp.com/design/design-center/software/embedded-software/i-mx-software/android-os-for-i-mx-applications-processors:IMXANDROID
+  Android 16.0.0_1.0.0 (L6.12.34_2.1.0 BSP)
+2.
+  *RAM (4g/8g)
+   eMMC 32g
+   Etherent
+   UART
+  *RTC 
+  *TPM 
+  *Audio out (Amplified to drive one speaker)
+   LVDS(PWM)
+   SDcard
+   HDMI
+   WiFi
+  
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+######################################################################################################################
+--- 環變
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_0113
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+export MY_ANDROID=/home/fox/project/imx8pl_android/android_build_uboot/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-elf/bin/aarch64-none-elf-
+export CLANG_PATH=/opt/prebuilt-android-clang
+export PATH=/opt/prebuilt-android-kernel-build-tools/linux-x86/bin:$PATH
+
+source ~/.bash_android
+--- 編譯
+cd ${MY_ANDROID}
+source build/envsetup.sh
+lunch evk_8mp-userdebug
+./imx-make.sh bootloader -j4
+./imx-make.sh kernel -c -j4
+./imx-make.sh bootimage -j4
+./imx-make.sh dtboimage -j4
+./imx-make.sh -j4 2>&1
+
+
+--- emmc燒錄
+cd ${MY_ANDROID}/out/target/product/evk_8mp
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
+
+--- SD燒錄
+16g
+cd device/nxp/common/tools/
+sudo ./imx-sdcard-partition.sh -f imx8mp -D /home/fox/project/imx8pl_android/android_build_0113/out/target/product/evk_8mp/ /dev/sda
+32g
+sudo ${MY_ANDROID}/device/nxp/common/tools/imx-sdcard-partition.sh -f imx8mp -c 28 /dev/sdX
+sudo ./imx-sdcard-partition.sh -f imx8mp -D /home/albert/project/imx8mp_android/imx-android-13.0.0_2.2.0/android_build/out/target/product/evk_8mp /dev/sdb
+
+--- OTA打包
+cd ${MY_ANDROID}
+source build/envsetup.sh
+lunch evk_8mp-userdebug
+./imx-make.sh bootloader kernel -j4
+make otapackage -j4
+檔案在 ${MY_ANDROID}/out/target/product/evk_8mm/evk_8mm-ota-**.zip
+
+--- 打包
+1.\android_build\out\target\product\evk_8mp 確認有uuu.exe
+2.cd \android_build\out\target\product\evk_8mp
+3.tar -czvf IMX8PL-ANDROID_v02.image *
+4.複製到windows C:\project\Android\image\imx8pl\20250115_v02\v02
+5.tar -xzvf IMX8PL-ANDROID_v02.image
+6.刪除IMX8PL-ANDROID_v02.image
+7.用rar製作 v02.rar
