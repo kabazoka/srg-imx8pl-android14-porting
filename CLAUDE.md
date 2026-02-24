@@ -7,20 +7,18 @@ This repo tracks only the **modified files** — not the full Android source tre
 
 ## Directory Layout
 ```
-uboot/
-├── evk/                      # EVK config (6GB DDR, UART2)
-│   ├── imx8mp_evk.h
-│   └── lpddr4_timing.c
-└── srg/                      # SRG config (4GB DDR, UART4)
-    ├── imx8mp_evk.h
-    └── lpddr4_timing.c
-flash-images/
-├── evk/                      # EVK build artifacts
-└── srg/                      # SRG build artifacts (Ready for testing)
-patches/                      # Official patches from meta-aaeon-nxp
-scripts/
-└── apply-platform.sh         # Switch between EVK/SRG configs
-vendor-reference/             # Original vendor files
+original/                     # 17 unmodified NXP BSP files
+  vendor/nxp-opensource/      #   Preserves Android build tree path structure
+    uboot-imx/...
+    kernel_imx/...
+    imx-mkimage/...
+  device/nxp/...
+modified/                     # 17 SRG-iMX8PL ported files (same tree)
+  (same structure)            #   diff original/ vs modified/ to see all changes
+reference/
+  patches/                    # AAEON vendor patches
+  scripts/                    # Historical scripts (flash, apply-platform, etc.)
+  notes/                      # Vendor notes
 ```
 
 ## Hardware: EVK vs SRG
@@ -39,12 +37,18 @@ vendor-reference/             # Original vendor files
 > - **Build:** `./imx-make.sh` (instead of `make`)
 > - **Flash:** `./imx-sdcard-partition.sh` (instead of `dd` or other tools)
 
-### Switch Platform & Build
+### Deploy Modified Files to Build Tree
 ```bash
-# Apply SRG configuration
-~/srg-imx8pl-android14-porting/scripts/apply-platform.sh srg
+# Copy all modified files into the Android build tree
+BUILD=/mnt/data/imx-android-14.0.0_2.2.0/android_build
+for f in $(find ~/srg-imx8pl-android14-porting/modified -type f); do
+  dest="$BUILD/${f#*modified/}"
+  cp "$f" "$dest"
+done
+```
 
-# Build bootloader
+### Build
+```bash
 cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
 export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
 export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
@@ -57,15 +61,7 @@ lunch evk_8mp-trunk_staging-userdebug
 
 ### Flash SD Card (SRG)
 ```bash
-cd ~/srg-imx8pl-android14-porting/flash-images/srg
-sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
-```
-
-### Analyze Vendor WIC Image
-```bash
-zstd -d image.rootfs.wic.zst -o wic.img
-dd if=wic.img of=flash.bin bs=1k skip=32 count=1600
-strings flash.bin | grep "console="
+sudo ~/srg-imx8pl-android14-porting/reference/scripts/imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdb
 ```
 
 ## Current Status
@@ -88,5 +84,7 @@ strings flash.bin | grep "console="
 
 ## Key Paths
 - **Build root:** `/mnt/data/imx-android-14.0.0_2.2.0/android_build`
-- **U-Boot:** `vendor/nxp-opensource/uboot-imx/`
-- **Patches:** `~/srg-imx8pl-android14-porting/patches/`
+- **Original files:** `original/` (unmodified NXP BSP)
+- **Modified files:** `modified/` (SRG port)
+- **Patches:** `reference/patches/`
+- **Moved binaries:** `/mnt/data/unmodified_source/`

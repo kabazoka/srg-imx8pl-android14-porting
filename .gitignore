@@ -1,9 +1,14 @@
-flash-images/*
-vendor-reference/*
-!vendor-reference/*.dtb
-!vendor-reference/*.dts
-*.wic
-*.wic.zst
+# Build artifacts
 *.img
 *.imx
 *.bin
+*.wic
+*.wic.zst
+*.dtb
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

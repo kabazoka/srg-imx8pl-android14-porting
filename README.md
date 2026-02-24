@@ -1,12 +1,12 @@
 # SRG-iMX8PL Android 14 Porting Notes
 
-**Date:** 2026-02-05 (Updated: 2026-02-23)
+**Date:** 2026-02-05 (Updated: 2026-02-24)
 **Platform:** SRG-iMX8PL (based on NXP i.MX8MP EVK)
 **OS:** Android 14
 
 ## Overview
 
-This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, USB VBUS fix, serial console built-in driver, Kconfig dependency chain fix, and debugging multiple boot hang/freeze issues.
+This note documents the porting of Android 14 to the SRG-iMX8PL custom board, including RTC integration, 4GB DDR timing support, USB VBUS fix, serial console built-in driver, Kconfig dependency chain fix, UART4 DMA probe fix, and debugging multiple boot hang/freeze issues.
 
 ## Hardware Differences: EVK vs SRG
 
@@ -26,52 +26,50 @@ A dual-platform build system was established to support both EVK and SRG boards 
 ### Directory Structure
 ```
 ~/srg-imx8pl-android14-porting/
-├── kernel/
-│   └── dts/
-│       ├── imx8mp-evk.dts        # SRG (Modified): 4GB DDR, UART4, USB Host
-│       └── imx8mp-evk.dts.orig   # EVK (Original): 6GB DDR, UART2, USB OTG
-├── uboot/
-│   ├── board/
-│   │   ├── lpddr4_timing.c       # SRG: 4GB Timing (3000MHz, official AAEON)
-│   │   ├── lpddr4_timing.c.orig  # EVK: 6GB/8GB Timing
-│   │   ├── imx8mp_evk.h          # SRG: Memory Map, UART4 Base
-│   │   └── imx8mp_evk.h.orig     # EVK: Memory Map, UART2 Base
-│   ├── dts/
-│   │   ├── imx8mp-evk.dts        # SRG: U-Boot DTS (UART4, console=ttymxc3)
-│   │   └── imx8mp-evk.dts.orig   # EVK: U-Boot DTS (UART2, console=ttymxc1)
-│   └── spl_dts/
-│       ├── imx8mp-evk-u-boot.dtsi       # SRG: SPL DTSI (UART4 bootph-pre-ram)
-│       └── imx8mp-evk-u-boot.dtsi.orig  # EVK: SPL DTSI (UART2)
-├── flash-images/
-│   ├── evk/                  # Pre-built EVK images for flashing
-│   └── srg/                  # Pre-built SRG images for flashing
-├── patches/                  # Official patches (Source of Truth)
-├── scripts/
-│   ├── apply-platform.sh     # One-command platform switch (deploys all files)
-│   ├── restore_to_original.sh # Restore EVK defaults to Android Build
-│   └── build/                # Build helper scripts (AndroidUboot.sh, pad_image.sh)
-└── vendor-reference/         # Original vendor files
+├── original/                 # 17 unmodified NXP BSP files
+│   ├── vendor/nxp-opensource/
+│   │   ├── uboot-imx/       # 7 files: DTS, DDR timing, config, fastboot
+│   │   ├── kernel_imx/      # 5 files: DTS, Kconfig, clock driver, GKI
+│   │   └── imx-mkimage/     # 1 file: pad_image.sh
+│   └── device/nxp/          # 4 files: build scripts, board config
+├── modified/                 # 17 SRG-modified files (same tree structure)
+│   └── (same as original/)
+├── reference/
+│   ├── patches/              # AAEON vendor patches
+│   ├── scripts/              # Flash script, apply-platform, etc.
+│   └── notes/                # Vendor notes
+├── README.md
+└── CLAUDE.md
 
-/mnt/data/unmodified_source/          # Extracted original NXP source code (Reference)
+/mnt/data/unmodified_source/          # Moved binaries, flash-images, vendor-reference
 /mnt/data/imx-android-14.0.0_2.2.0/android_build/  # Actual Android Build Tree
 ```
 
-### Switching Platforms
-To switch the Android build tree between EVK and SRG configurations:
+### Deploying Modifications
+To apply SRG modifications to the Android build tree:
 
 ```bash
-# Apply SRG configuration (Uses standard modified files)
-./scripts/apply-platform.sh srg
+BUILD=/mnt/data/imx-android-14.0.0_2.2.0/android_build
+for f in $(find ~/srg-imx8pl-android14-porting/modified -type f); do
+  dest="$BUILD/${f#*modified/}"
+  cp "$f" "$dest"
+done
+```
 
-# Apply EVK configuration (Uses *.orig files)
-./scripts/apply-platform.sh evk
+To restore original NXP files:
+```bash
+BUILD=/mnt/data/imx-android-14.0.0_2.2.0/android_build
+for f in $(find ~/srg-imx8pl-android14-porting/original -type f); do
+  dest="$BUILD/${f#*original/}"
+  cp "$f" "$dest"
+done
 ```
 
 ---
 
 ## Complete Modification Audit
 
-All changes to the Android build tree vs unmodified NXP source (17 modifications across 5 repos):
+All changes to the Android build tree vs unmodified NXP source (18 modifications across 5 repos):
 
 ### Repo 1: `vendor/nxp-opensource/uboot-imx/` (6 files)
 
@@ -91,14 +89,15 @@ All changes to the Android build tree vs unmodified NXP source (17 modifications
 | 7 | `common/tools/imx-make.sh` | ENABLE_GKI default 1→0 | ✅ Intentional |
 | 8 | `imx8m/evk_8mp/AndroidUboot.sh` | Added `SPD=none` for non-trusty ATF | ✅ Key TEE fix |
 
-### Repo 3: `vendor/nxp-opensource/kernel_imx/` (4 files)
+### Repo 3: `vendor/nxp-opensource/kernel_imx/` (5 files)
 
 | # | File | Change | Status |
 |---|------|--------|--------|
-| 9 | `arch/arm64/boot/dts/freescale/imx8mp-evk.dts` | UART4 + USB host + RTC + regulators | ✅ Correct |
+| 9 | `arch/arm64/boot/dts/freescale/imx8mp-evk.dts` | UART4 + USB host + RTC + regulators + DMA delete-property | ✅ Correct |
 | 10 | `arch/arm64/configs/gki_defconfig` | CONFIG_DEBUG_INFO_BTF=y→n | ✅ Build fix |
 | 14 | `drivers/clk/imx/clk-imx8mp.c` | uart4 clock → `_critical` (prevent gate disable) | ✅ Boot hang fix |
 | 16 | `arch/arm64/configs/imx8mp_gki.fragment` | SOC_IMX8M=m→y, SERIAL_IMX=m→y, SERIAL_IMX_CONSOLE=m→y, BUSFREQ=m→y | ✅ Console + busfreq built-in |
+| 18 | `android/abi_gki_aarch64_imx` | Added `request_bus_freq`, `release_bus_freq`, `get_bus_freq_mode` to GKI allowlist | ✅ Protected symbol fix |
 
 ### Repo 4: `vendor/nxp-opensource/imx-mkimage/` (1 file)
 
@@ -350,8 +349,8 @@ sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=f
 sync
 
 # === 方式 C：全部重新 flash（partition + system） ===
-cd ~/srg-imx8pl-android14-porting/flash-images/srg
-sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
+cd /mnt/data/unmodified_source/flash-images/srg
+sudo ~/srg-imx8pl-android14-porting/reference/scripts/imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
 # 注意：full flash 後 ALWAYS 手動 dd boot.img + vendor_boot.img（flash script 可能不會寫入）
 sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
 sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
@@ -381,10 +380,11 @@ print('OK:', full.hex())
 " && sync
 ```
 
-### Copy Build Artifacts（備份到 porting repo）
+### Copy Build Artifacts（備份）
 ```bash
+# Build artifacts are now stored at /mnt/data/unmodified_source/flash-images/
 cp /mnt/data/imx-android-14.0.0_2.2.0/android_build/out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx \
-   ~/srg-imx8pl-android14-porting/flash-images/srg/u-boot-imx8mp.imx
+   /mnt/data/unmodified_source/flash-images/srg/u-boot-imx8mp.imx
 ```
 
 ---
@@ -426,7 +426,7 @@ Binary search with `pr_err()` checkpoints in the probe function — 5 iterations
 
 ---
 
-## Task 7: Serial Console Input Fix (2026-02-23)
+## Task 7: Serial Console Input Fix (2026-02-23) — ✅ Verified (2026-02-24)
 
 ### Problem
 After clk-imx8mp.ko fix, Android boots to HDMI (lock screen visible). But serial console (UART4) only shows output — keyboard input not accepted.
@@ -487,10 +487,13 @@ Kconfig 規則：**built-in 不能依賴 module** → `BUSFREQ=y` 自動降為 `
 - `busfreq-imx8mq.ko`（IMX8M_BUSFREQ=y）
 - `imx.ko`（SERIAL_IMX=y）
 
-### Current Status (2026-02-23)
+### Current Status (2026-02-24) — ✅ Verified
 - HDMI: Android lock screen visible, time updating (system alive)
-- Serial console: pending verification with clean rebuild
-- USB/ADB: pending verification with clean rebuild
+- Serial console 輸出: ✅ 正常（earlycon + ttymxc3）
+- Serial console 輸入: ✅ 正常（shell prompt 可操作）
+- Kernel: `6.6.36-4k-g112aa92f1762-dirty`
+- ttymxc3 probe: ✅ `30a60000.serial: ttymxc3 at MMIO 0x30a60000`
+- `console [ttymxc3] enabled`: ✅ 確認
 
 ---
 
@@ -530,6 +533,109 @@ USB mouse/keyboard 插上去沒反應，ADB over USB 也不行。
    ```
 
 4. **移除 EVK `reg_usb_vbus`** (GPIO1_IO14, SRG 不使用)
+
+---
+
+## Task 10: GKI Protected Symbol — sdhci Reboot Loop (2026-02-24) — ✅ Verified
+
+### Problem
+Clean rebuild 後改動生效（clk hang 修好、blk-ctrl 正常），但開機進入 reboot loop。
+
+Log 關鍵行：
+```
+sdhci_esdhc_imx: Protected symbol: request_bus_freq (err -13)
+sdhci_esdhc_imx: Protected symbol: release_bus_freq (err -13)
+```
+sdhci 是 SD/eMMC 驅動 → 載入失敗 → init 無法 mount system partition → kernel panic → reboot。
+
+### Root Cause: GKI Protected Symbol 機制
+
+Android GKI kernel（`kernel/module/main.c:1154-1170`）對 vendor module（未簽名 .ko）有 symbol 存取保護：
+1. Module 載入時每個引用的 symbol 都要檢查
+2. 如果 symbol 在 vmlinux（built-in），必須在 `abi_gki_aarch64_imx` allowlist 裡才允許
+3. Module 之間（.ko → .ko）的 symbol 存取不受此限制
+
+原本 BUSFREQ=m → `request_bus_freq`/`release_bus_freq` 在 `busfreq-imx8mq.ko`（module）→ sdhci.ko 可自由存取。
+改成 BUSFREQ=y → symbol 在 vmlinux → 不在 allowlist → **-EACCES (err -13)**。
+
+影響範圍：31 個 driver 用了 busfreq API（sdhci、USB dwc3、ethernet、crypto 等）。
+
+### Fix
+**File:** `vendor/nxp-opensource/kernel_imx/android/abi_gki_aarch64_imx`
+
+在 GKI symbol allowlist 加入 3 個 symbol（按字母順序）：
+```
+  get_bus_freq_mode     ← 插在 get_cached_msi_msg 前
+  release_bus_freq      ← 插在 release_firmware 前
+  request_bus_freq      ← 插在 request_firmware 前
+```
+
+### GKI Protected Symbol 機制說明
+
+```
+Vendor module (.ko, 未簽名) 載入時：
+  resolve_symbol(name) →
+    if symbol 在其他 vendor module → ✅ 允許
+    if symbol 在 abi_gki_aarch64_imx allowlist → ✅ 允許
+    else → ❌ -EACCES "Protected symbol"
+```
+
+此機制防止 vendor module 依賴非穩定的 kernel ABI。但 NXP 原本 BUSFREQ 是 module，不需要加到 allowlist；
+我們改成 built-in 後就需要了。
+
+---
+
+## Task 11: UART4 Serial Console Input — DMA Probe 衝突 (2026-02-24) — ✅ Verified
+
+### Problem
+GKI fix 後 Android 正常開機（HDMI lock screen），但 serial console 仍無法輸入。
+Boot log 顯示 ttymxc0/1/2 都成功 probe，唯獨 **ttymxc3（UART4）缺失**。
+
+### Root Cause
+DTSI（`imx8mp.dtsi:1199-1209`）為 uart4 定義了 DMA 通道：
+```dts
+dmas = <&sdma1 28 4 0>, <&sdma1 29 4 0>;
+dma-names = "rx", "tx";
+```
+
+當 earlycon 佔用 UART4（直接寫 register 做 TX），imx-uart driver probe 時若啟用 DMA 會衝突 → **probe 靜默失敗** → ttymxc3 不註冊 → 只剩 earlycon 的 TX-only 輸出。
+
+EVK 不受影響：EVK 的 earlycon 在 uart2，uart4 沒被佔用所以 DMA probe 不會衝突。
+
+AAEON 官方 kernel patch（`patches/001-srg-imx8pl-kernel-all.patch` line 802-808）有此修正。
+
+### Fix
+**File:** `vendor/nxp-opensource/kernel_imx/arch/arm64/boot/dts/freescale/imx8mp-evk.dts`
+
+```dts
+&uart4 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_uart4>;
+    /delete-property/ dmas;
+    /delete-property/ dma-names;
+    status = "okay";
+};
+```
+
+`/delete-property/` 覆蓋 DTSI 的 DMA 設定，強制 uart4 使用 PIO（programmed I/O）模式，避免與 earlycon 衝突。
+
+> **Note:** AAEON patch 有 typo `dmas-names`，正確 property name 是 `dma-names`（無 s）。
+
+### 驗證結果 (2026-02-24) — ✅ Confirmed
+```
+evk_8mp:/ # dmesg | grep ttymxc
+[    6.969616] 30890000.serial: ttymxc1 at MMIO 0x30890000 (irq = 17, base_baud = 1500000) is a IMX
+[    6.977848] 30a60000.serial: ttymxc3 at MMIO 0x30a60000 (irq = 18, base_baud = 1500000) is a IMX
+[    6.995519] printk: console [ttymxc3] enabled
+[    7.006982] 30860000.serial: ttymxc0 at MMIO 0x30860000 (irq = 55, base_baud = 5000000) is a IMX
+[    7.007950] 30880000.serial: ttymxc2 at MMIO 0x30880000 (irq = 56, base_baud = 5000000) is a IMX
+
+evk_8mp:/ # uname -r
+6.6.36-4k-g112aa92f1762-dirty
+```
+- ttymxc0~3 四個 UART 全部成功 probe ✅
+- `console [ttymxc3] enabled` 確認 UART4 為 kernel console ✅
+- Serial console 輸入正常（shell prompt 可操作）✅
 
 ---
 
@@ -668,41 +774,66 @@ cat /proc/cmdline      # 應包含 console=ttymxc3,115200
 
 ---
 
-## Next Steps
+## Project Status: ✅ Android 14 Confirmed Working (2026-02-24)
 
-### Completed
-- [x] Obtain correct 4GB DDR timing (Found in meta-aaeon-nxp)
-- [x] Apply Kernel USB fixes (Host mode, VBUS)
-- [x] Fix U-Boot DTS UART4 migration (stdout-path, console, status)
-- [x] Audit all build tree modifications vs unmodified source
-- [x] Fix ATF UART console (IMX_BOOT_UART_BASE=0x30A60000)
-- [x] Boot to kernel + Android init first stage
-- [x] Fix `androidboot.console=ttymxc3` in BoardConfig.mk
-- [x] AVB auto-unlock for development (fb_fsl_boot.c)
-- [x] Add `keep_bootcon initcall_debug` to kernel cmdline
-- [x] Verify DDR detection (4GB confirmed in boot log)
-- [x] Fix clk-imx8mp.ko hang (uart4 clock gate → `_critical`)
-- [x] Android boots to HDMI lock screen
-- [x] Add `console=ttymxc3,115200` to kernel cmdline (serial input fix)
-- [x] Fix `CONFIG_SERIAL_IMX=m→y` in `imx8mp_gki.fragment` (built-in console)
-- [x] Fix linker error: `CONFIG_IMX8M_BUSFREQ=m→y` + remove .ko from SharedBoardConfig
-- [x] Fix Kconfig 降級: `CONFIG_SOC_IMX8M=m→y`（使 BUSFREQ=y 不被降為 =m）
-- [x] Remove `soc-imx8m.ko` from SharedBoardConfig.mk（SOC_IMX8M=y → built-in）
-- [x] Fix USB VBUS polarity (`enable-active-high` → `enable-active-low`)
-- [x] Fix USB pad values (`0x10` → `0x59`)
-- [x] Add USB-A connector nodes to `&usb3_0` / `&usb3_1`
-- [x] Remove EVK `reg_usb_vbus` (GPIO1_14, unused on SRG)
+**Android 14 已在 SRG-iMX8PL 上成功運行。**
 
-### Pending
-- [ ] **Clean rebuild**: `./imx-make.sh -c bootimage && vendorbootimage`（**必須用 `-c` flag**）
-- [ ] **Build 後驗證**: 確認 DTB/Image 時間戳 + .config 正確
-- [ ] **Flash**: dd boot.img + vendor_boot.img
-- [ ] **重置 A/B metadata**（如需要）
-- [ ] Verify serial console input works
-- [ ] Verify USB mouse/keyboard works
-- [ ] Complete full Android boot to home screen
+### 驗證結果
+| 項目 | 狀態 | 備註 |
+|------|------|------|
+| DDR 4GB | ✅ | SPL 偵測 3G+1G 正確 |
+| U-Boot console (UART4) | ✅ | `ttymxc3`, 115200 baud |
+| Kernel boot | ✅ | `6.6.36-4k-g112aa92f1762-dirty` |
+| Serial console 輸出 | ✅ | earlycon + ttymxc3 |
+| Serial console 輸入 | ✅ | shell prompt 可操作 |
+| HDMI 顯示 | ✅ | Android lock screen |
+| Android OS | ✅ | Android 14 |
+| ttymxc0~3 全部 probe | ✅ | 4 個 UART 全部註冊 |
 
-### Known Potential Issues（下一步可能遇到）
-- Trusty modules (#5-8 in modules.load) — `SPD=none` 但 module 仍被載入，可能 fail
-- `imx8mp-blk-ctrl.ko` (#10) — 已知 `regmap_test_bits` hang 問題
-- `of_clk_add_hw_provider()` — assigned-clock-rates PLL lock polling
+### 已解決的所有問題（按時間順序）
+
+**Phase 1: 硬體基礎**
+- [x] 4GB DDR timing（meta-aaeon-nxp 官方 patch）
+- [x] U-Boot UART4 migration（imx8mp_evk.h + DTS + SPL DTSI + imx8mp_evk.c）
+- [x] ATF UART4 console（`IMX_BOOT_UART_BASE=0x30A60000`）
+- [x] TEE/SPD fix（`SPD=none` + `pad_image.sh` skip tee.bin）
+- [x] `CONFIG_BOOTCOMMAND="boota"`（無 saved env 時需要）
+
+**Phase 2: Kernel 啟動**
+- [x] RTC PCF85063ATL @ I2C3 0x51
+- [x] USB host mode + VBUS regulators（GPIO1_05/06）
+- [x] AVB auto-unlock for development（`fb_fsl_boot.c`）
+- [x] `keep_bootcon initcall_debug` cmdline（debug 用）
+- [x] `console=ttymxc3,115200` 加入 kernel cmdline
+- [x] `androidboot.console=ttymxc3` 加入 BoardConfig.mk
+
+**Phase 3: Clock / Module 修復**
+- [x] clk-imx8mp.ko hang — uart4 clock gate 被 disable（→ `_critical` variant）
+- [x] `CONFIG_SERIAL_IMX=m→y`（built-in console driver）
+- [x] `CONFIG_IMX8M_BUSFREQ=m→y`（linker: `request_bus_freq` undefined）
+- [x] `CONFIG_SOC_IMX8M=m→y`（Kconfig 降級陷阱：built-in 不能依賴 module）
+- [x] 移除 3 個 .ko from SharedBoardConfig.mk（`soc-imx8m.ko` + `busfreq-imx8mq.ko` + `imx.ko`）
+
+**Phase 4: GKI / DMA 修復**
+- [x] GKI Protected Symbol — `abi_gki_aarch64_imx` 加入 3 個 busfreq symbol
+- [x] UART4 DMA probe 衝突 — `/delete-property/ dmas` + `/delete-property/ dma-names`
+
+**Phase 5: USB 硬體修復**
+- [x] VBUS 極性（`enable-active-high` → `enable-active-low`，P-channel MOSFET）
+- [x] Pad value（`0x10` → `0x59`）
+- [x] USB-A connector 子節點
+- [x] 移除 EVK `reg_usb_vbus`（GPIO1_14，SRG 不使用）
+
+### 未驗證 / 未來工作
+- [ ] USB 滑鼠/鍵盤（DTS 已修正 VBUS 極性，待實機驗證）
+- [ ] ADB over USB
+- [ ] WiFi（8852BE driver — 需 GKI symbol list 更新 + PCIe patch）
+- [ ] Bluetooth（rtk_btusb.ko）
+- [ ] RS485（imx.c 修改 + GPIO mode 設定）
+- [ ] LVDS 面板支援
+- [ ] 量產 image 打包（OTA、emmc 燒錄）
+
+### 已知限制
+- Trusty modules (#5-8) — `SPD=none` 但 module 仍被載入（error but no hang）
+- Kernel version 標記 `-dirty`（build tree 有未 commit 的改動，正常）
+- `clk_ignore_unused` 仍在 cmdline（移除可能觸發其他 clock gate 問題）
