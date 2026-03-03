@@ -279,6 +279,20 @@ lunch evk_8mp-trunk_staging-userdebug
 > **WARNING**: `imx-mkimage/iMX8M/flash.bin` = 最後一個 variant = **UUU**（沒有 `boota`！）
 > 正確的 U-Boot image: `out/.../obj/UBOOT_COLLECTION/u-boot-imx8mp.imx`
 
+> **WARNING: GKI boot.img 陷阱（切回 EVK 時務必注意）**
+> NXP 原版 `imx-make.sh` 預設 `ENABLE_GKI=1`（Line 83: `enable_gki=${ENABLE_GKI:-1}`）。
+> 當 `enable_gki=1` 時，`./imx-make.sh bootimage` 會：
+> 1. 先用 **imx kernel** build `boot.img`
+> 2. 把它改名為 `boot-imx.img`
+> 3. 再用 **GKI kernel**（Google 通用版，35MB）重新 build `boot.img`
+>
+> 結果：`boot.img` = GKI kernel（缺少 i.MX8MP driver），`boot-imx.img` = imx kernel（正確的）。
+> 如果燒 `boot.img` → kernel 在 "Starting kernel ..." 後直接 panic reboot。
+>
+> **SRG modified 版本**已改為 `ENABLE_GKI=0`（修改 #7），不會有此問題。
+> **切回 EVK 原版時**，必須用 `ENABLE_GKI=0 ./imx-make.sh bootimage -j$(nproc)`，
+> 或者 flash 時用 `boot-imx.img` 而非 `boot.img`。
+
 ### Image Content Summary
 
 | Image | Contains | SD Card Partition |
@@ -332,6 +346,25 @@ rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_vendor_ramdisk_stripped_in
 
 # 然後 rebuild（不需 -c）
 ./imx-make.sh bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
+```
+
+### Flash to eMMC（UUU）
+
+> **注意：UUU 燒錄的所有 image 必須來自同一次 build！**
+> 如果 `super.img`（2月27）和 `vbmeta`（3月2）時間戳不同，dm-verity 會判定 system partition corrupted → reboot loop。
+> 燒之前先確認：`ls -lh out/target/product/evk_8mp/{super.img,vbmeta-imx8mp.img,boot.img,vendor_boot.img}`
+
+```bash
+cd out/target/product/evk_8mp
+
+# GKI 陷阱：clean imx-make.sh 預設 ENABLE_GKI=1，boot.img 會是 GKI kernel（35MB）
+# imx kernel 被改名為 boot-imx.img（14MB）。燒之前務必確認：
+ls -lh boot.img boot-imx.img
+# 如果 boot.img 是 35MB → 先覆蓋：
+cp boot-imx.img boot.img
+
+# 燒 eMMC（EVK 用 USB-C 連接 PC，撥到 download mode）
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
 ```
 
 ### Flash to SD Card
@@ -823,6 +856,53 @@ cat /proc/cmdline      # 應包含 console=ttymxc3,115200
 - [x] Pad value（`0x10` → `0x59`）
 - [x] USB-A connector 子節點
 - [x] 移除 EVK `reg_usb_vbus`（GPIO1_14，SRG 不使用）
+
+---
+
+## FRDM-iMX8MP Porting
+
+FRDM-iMX8MP 是 NXP 另一款 i.MX8MP 開發板，需要額外 patch 支援。
+
+**詳細文件：** [`reference/notes/FRDM_patch_note.md`](reference/notes/FRDM_patch_note.md)
+
+### Patch 檔案位置
+
+```
+reference/patches/frdm8mp_android14_patch/
+├── device_nxp/    (1 patch)   → device/nxp
+├── vendor/uboot/  (3 patches) → vendor/nxp-opensource/uboot-imx
+├── vendor/kernel/ (11 patches)→ vendor/nxp-opensource/kernel_imx
+└── vendor/mkimage/(1 patch)   → vendor/nxp-opensource/imx-mkimage
+```
+
+### 快速 Apply
+
+```bash
+BUILD=/mnt/data/imx-android-14.0.0_2.2.0/android_build
+PATCHES=~/srg-imx8pl-android14-porting/reference/patches/frdm8mp_android14_patch
+
+cd ${BUILD}/device/nxp && git apply ${PATCHES}/device_nxp/*.patch
+cd ${BUILD}/vendor/nxp-opensource/uboot-imx && git am ${PATCHES}/vendor/uboot/*.patch
+cd ${BUILD}/vendor/nxp-opensource/kernel_imx && git am --3way ${PATCHES}/vendor/kernel/*.patch
+cd ${BUILD}/vendor/nxp-opensource/imx-mkimage && git am ${PATCHES}/vendor/mkimage/*.patch
+```
+
+> **注意：** kernel patch 必須用 `--3way`，因為 GKI symbol patch 的 context 是基於 2.1.0，在 2.2.0 上需要 3-way merge。
+
+### Build & Flash
+
+```bash
+source build/envsetup.sh
+lunch frdm_8mp-trunk_staging-userdebug
+./imx-make.sh -j$(nproc)
+
+# Flash（確認 boot.img 是 imx kernel，不是 GKI）
+cd out/target/product/frdm_8mp
+ls -lh boot.img boot-imx.img   # boot.img 應 ~14MB，若 35MB 則 cp boot-imx.img boot.img
+sudo ./uuu_imx_android_flash.sh -f imx8mp -p frdm -a -e
+```
+
+---
 
 ### 未驗證 / 未來工作
 - [ ] USB 滑鼠/鍵盤（DTS 已修正 VBUS 極性，待實機驗證）

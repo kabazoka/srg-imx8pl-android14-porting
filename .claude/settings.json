@@ -5,6 +5,9 @@
       "Edit(*)",
       "Write(*)",
       "Bash(grep:*)",
+      "Bash(which:*)",
+      "Bash(cat:*)",
+      "Bash(file:*)",
       "Bash(find:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
@@ -15,12 +18,24 @@
       "Bash(sort:*)",
       "Bash(xxd:*)",
       "Bash(file:*)",
+      "Bash(cd:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git stash:*)",
       "Bash(git add:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(tree:*)",
+      "Bash(diff:*)",
+      "Bash(stat:*)",
+      "Bash(readlink:*)",
+      "Bash(realpath:*)",
+      "Bash(basename:*)",
+      "Bash(dirname:*)",
+      "Bash(env:*)",
+      "Bash(echo:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)"
     ]
   }
 }

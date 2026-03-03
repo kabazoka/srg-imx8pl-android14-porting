@@ -1,0 +1,23 @@
+========================================
+Full File Comparison: Build Tree vs Clean Repo
+Date: 2026-03-03 10:30:36
+Current: /mnt/data/imx-android-14.0.0_2.2.0/android_build
+Clean:   /mnt/data/imx-android-14.0.0_2.2.0_evk/imx-android-14.0.0_2.2.0/android_build
+========================================
+
+=== vendor/nxp-opensource/kernel_imx ===
+*deleting   .tmp.config.dYgxWqmB9l
+*deleting   .tmp.config.TttaEIJfYU
+*deleting   .tmp.config.PDyxEQl2Dj
+*deleting   .merge_tmp.config.lEintK2S8z
+*deleting   .merge_tmp.config.iAntP0FKGC
+*deleting   .merge_tmp.config.6hglThkcLw
+skipping non-regular file ".git"
+skipping non-regular file "Documentation/Changes"
+skipping non-regular file "arch/arm/boot/dts/allwinner/sun8i-a23-ippo-q8h-v1.2.dts"
+skipping non-regular file "arch/arm/boot/dts/allwinner/sun8i-a23-ippo-q8h-v5.dts"
+skipping non-regular file "arch/arm/boot/dts/allwinner/sun8i-a33-et-q8-v1.6.dts"
+skipping non-regular file "arch/arm/boot/dts/allwinner/sun8i-a33-ippo-q8h-v1.2.dts"
+skipping non-regular file "arch/arm64/boot/dts/renesas/r9a07g054l2-smarc-cru-csi-ov5645.dtso"
+>fc.T...... arch/arm64/configs/gki_defconfig
+skipping non-regular file "arch/powerpc/configs/kvm_guest.config"

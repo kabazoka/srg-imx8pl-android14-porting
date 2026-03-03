@@ -1,0 +1,164 @@
+From a4da39ab2bc9dc21f86b394076ff74175b8e6d48 Mon Sep 17 00:00:00 2001
+From: nxf77310 <rhody.ma@nxp.com>
+Date: Fri, 18 Jul 2025 17:03:36 +0900
+Subject: [PATCH 10/10] arm64: dts: imx8mp-frdm: add imx8mpfrdm basic android
+ support
+
+---
+ .../dts/freescale/imx8mp-frdm-android.dtsi    | 72 +++++++++++++++++++
+ arch/arm64/configs/imx8mp_gki.fragment        |  3 +
+ arch/arm64/configs/imx_v8_android_defconfig   |  5 +-
+ arch/arm64/configs/imx_v8_defconfig           |  3 +-
+ 4 files changed, 80 insertions(+), 3 deletions(-)
+ create mode 100644 arch/arm64/boot/dts/freescale/imx8mp-frdm-android.dtsi
+
+diff --git a/arch/arm64/boot/dts/freescale/imx8mp-frdm-android.dtsi b/arch/arm64/boot/dts/freescale/imx8mp-frdm-android.dtsi
+new file mode 100644
+index 000000000000..5a3a021eefef
+--- /dev/null
++++ b/arch/arm64/boot/dts/freescale/imx8mp-frdm-android.dtsi
+@@ -0,0 +1,72 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright 2022 NXP
++ */
++
++/ {
++	firmware {
++		android {
++			compatible = "android,firmware";
++			/* sd card node which used if androidboot.boot_device_root=mmcblk1 */
++			boot_devices_mmcblk1 = "soc@0/30800000.bus/30b50000.mmc";
++			/* emmc node which used if androidboot.boot_device_root=mmcblk2 */
++			boot_devices_mmcblk2 = "soc@0/30800000.bus/30b60000.mmc";
++			vbmeta {
++				/*we need use FirstStageMountVBootV2 if we enable avb*/
++				compatible = "android,vbmeta";
++				/*parts means the partition witch can be mount in first stage*/
++				parts = "vbmeta,dtbo,boot,init_boot,system,vendor,vendor_dlkm,product";
++			};
++		};
++	};
++
++	trusty {
++		compatible = "android,trusty-smc-v1";
++		ranges;
++		#address-cells = <2>;
++		#size-cells = <2>;
++		trusty-irq {
++			compatible = "android,trusty-irq-v1";
++			interrupt-ranges = < 0 15 0>;
++			ipi-range = <8 15 8>;
++		};
++		trusty-virtio {
++			compatible = "android,trusty-virtio-v1";
++		};
++		trusty-log {
++			compatible = "android,trusty-log-v1";
++		};
++	};
++};
++
++&{/reserved-memory/linux,cma} {
++	status = "disabled";
++};
++
++&resmem {
++	ramoops@94400000 {
++		compatible = "ramoops";
++		reg = <0 0x94400000 0 0x00100000>;
++		record-size     = <0x00020000>;
++		console-size    = <0x00020000>;
++		ftrace-size     = <0x00020000>;
++		pmsg-size       = <0x00020000>;
++        };
++	secure_region: secure {
++		 compatible = "imx-secure-ion-pool";
++		 reg = <0x0 0xE0000000 0 0x10000000>;
++	};
++};
++
++&lcdif1 {
++	trusty;
++	status = "okay";
++};
++
++&uart1 {
++	/delete-node/ bluetooth;
++};
++
++&vpumix_blk_ctl {
++	trusty;
++};
+diff --git a/arch/arm64/configs/imx8mp_gki.fragment b/arch/arm64/configs/imx8mp_gki.fragment
+index fd6bcad1742b..6bba4c2cd84a 100644
+--- a/arch/arm64/configs/imx8mp_gki.fragment
++++ b/arch/arm64/configs/imx8mp_gki.fragment
+@@ -113,6 +113,7 @@ CONFIG_RESET_IMX7=m
+ CONFIG_IMX8M_BUSFREQ=m
+ CONFIG_IMX_IRQSTEER=m
+ CONFIG_GPIO_MXC=m
++CONFIG_GPIO_PCA953X=m
+ CONFIG_TIMER_IMX_SYS_CTR=m
+ 
+ CONFIG_FPGA=y
+@@ -138,3 +139,5 @@ CONFIG_FSL_IMX8_DDR_PMU=m
+ # CONFIG_SOC_IMX9 is not set
+ # CONFIG_MODULE_SIG_ALL is not set
+ CONFIG_IMX_GKI_FIX=y
++CONFIG_GPIO_PCA953X_IRQ=y
++CONFIG_LEDS_PCA995X=m
+diff --git a/arch/arm64/configs/imx_v8_android_defconfig b/arch/arm64/configs/imx_v8_android_defconfig
+index 55c07a29da2f..1e5ed31b7261 100644
+--- a/arch/arm64/configs/imx_v8_android_defconfig
++++ b/arch/arm64/configs/imx_v8_android_defconfig
+@@ -81,6 +81,7 @@ CONFIG_DRM_NWL_MIPI_DSI=y
+ CONFIG_DRM_PANEL_NXP_RM67162=y
+ CONFIG_DRM_PANEL_RAYDIUM_RM67191=y
+ CONFIG_DRM_PANEL_RAYDIUM_RM692C9=y
++CONFIG_DRM_PANEL_WAVESHARE_DSI=y
+ CONFIG_DRM_PANEL_ROCKTECK_HIMAX8394F=y
+ CONFIG_DRM_PANEL_SIMPLE=y
+ CONFIG_ETHERNET=y
+@@ -176,7 +177,7 @@ CONFIG_KEYBOARD_SNVS_PWRKEY=y
+ CONFIG_L2TP=y
+ CONFIG_LEDS_GPIO=y
+ CONFIG_LEDS_PCA963X=y
+-CONFIG_LEDS_PCA995X=y
++CONFIG_LEDS_PCA995X=m
+ CONFIG_LEDS_PWM=y
+ CONFIG_LOGO=y
+ # CONFIG_LOGO_LINUX_MONO is not set
+@@ -367,7 +368,7 @@ CONFIG_TIMER_IMX_SYS_CTR=y
+ CONFIG_TIPC=y
+ CONFIG_TOUCHSCREEN_ELAN=y
+ CONFIG_TOUCHSCREEN_EXC3000=m
+-CONFIG_TOUCHSCREEN_GOODIX=m
++CONFIG_TOUCHSCREEN_GOODIX=y
+ CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C=m
+ CONFIG_TRUSTY=y
+ CONFIG_TRUSTY_CRASH_IS_PANIC=y
+diff --git a/arch/arm64/configs/imx_v8_defconfig b/arch/arm64/configs/imx_v8_defconfig
+index 6e3754f5be47..7002520d6db5 100644
+--- a/arch/arm64/configs/imx_v8_defconfig
++++ b/arch/arm64/configs/imx_v8_defconfig
+@@ -392,7 +392,7 @@ CONFIG_KEYBOARD_CROS_EC=y
+ CONFIG_INPUT_TOUCHSCREEN=y
+ CONFIG_TOUCHSCREEN_ATMEL_MXT=m
+ CONFIG_TOUCHSCREEN_EXC3000=y
+-CONFIG_TOUCHSCREEN_GOODIX=m
++CONFIG_TOUCHSCREEN_GOODIX=y
+ CONFIG_TOUCHSCREEN_ILITEK=y
+ CONFIG_TOUCHSCREEN_EDT_FT5X06=m
+ CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C=m
+@@ -635,6 +635,7 @@ CONFIG_DRM_PANEL_MANTIX_MLAF057WE51=m
+ CONFIG_DRM_PANEL_RAYDIUM_RM67191=y
+ CONFIG_DRM_PANEL_RAYDIUM_RM68200=y
+ CONFIG_DRM_PANEL_RAYDIUM_RM692C9=y
++CONFIG_DRM_PANEL_WAVESHARE_DSI=y
+ CONFIG_DRM_PANEL_ROCKTECK_HIMAX8394F=y
+ CONFIG_DRM_PANEL_SEIKO_43WVF1G=y
+ CONFIG_DRM_PANEL_SITRONIX_ST7703=m
+-- 
+2.34.1
+

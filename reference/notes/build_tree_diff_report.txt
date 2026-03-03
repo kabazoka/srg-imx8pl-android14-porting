@@ -1,0 +1,131 @@
+========================================
+Build Tree Diff Report
+Date: 2026-03-03 09:52:42
+Current:  /mnt/data/imx-android-14.0.0_2.2.0/android_build
+Clean:    /mnt/data/imx-android-14.0.0_2.2.0_evk/imx-android-14.0.0_2.2.0/android_build
+========================================
+
+=== Phase 1: Git Status (uncommitted changes) ===
+
+--- vendor/nxp-opensource/kernel_imx ---
+ M arch/arm64/configs/gki_defconfig
+arch/arm64/configs/gki_defconfig
+
+--- vendor/nxp-opensource/uboot-imx ---
+(clean)
+
+--- vendor/nxp-opensource/arm-trusted-firmware ---
+(clean)
+
+--- vendor/nxp-opensource/imx-mkimage ---
+?? iMX8M/bl31.bin
+?? iMX8M/flash.bin
+?? iMX8M/imx8mp-evk.dtb
+?? iMX8M/lpddr4_pmu_train_1d_dmem.bin
+?? iMX8M/lpddr4_pmu_train_1d_dmem_201904.bin
+?? iMX8M/lpddr4_pmu_train_1d_dmem_202006.bin
+?? iMX8M/lpddr4_pmu_train_1d_imem.bin
+?? iMX8M/lpddr4_pmu_train_1d_imem_201904.bin
+?? iMX8M/lpddr4_pmu_train_1d_imem_202006.bin
+?? iMX8M/lpddr4_pmu_train_2d_dmem.bin
+?? iMX8M/lpddr4_pmu_train_2d_dmem_201904.bin
+?? iMX8M/lpddr4_pmu_train_2d_dmem_202006.bin
+?? iMX8M/lpddr4_pmu_train_2d_dmem_pad.bin
+?? iMX8M/lpddr4_pmu_train_2d_imem.bin
+?? iMX8M/lpddr4_pmu_train_2d_imem_201904.bin
+?? iMX8M/lpddr4_pmu_train_2d_imem_202006.bin
+?? iMX8M/mkimage_imx8
+?? iMX8M/mkimage_uboot
+?? iMX8M/u-boot-nodtb.bin
+?? iMX8M/u-boot-spl-ddr.bin
+?? iMX8M/u-boot-spl.bin
+?? iMX8M/u-boot.itb
+?? src/build_info.h
+
+--- vendor/nxp-opensource/imx-gki ---
+(clean)
+
+--- vendor/nxp-opensource/imx ---
+(clean)
+
+--- device/nxp ---
+ M imx8m/evk_8mp/BoardConfig.mk
+imx8m/evk_8mp/BoardConfig.mk
+
+--- Detailed diffs for modified tracked files ---
+
+>>> vendor/nxp-opensource/kernel_imx <<<
+diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
+index e03b63f00968..0369fd80b417 100644
+--- a/arch/arm64/configs/gki_defconfig
++++ b/arch/arm64/configs/gki_defconfig
+@@ -740,7 +740,7 @@ CONFIG_STACKTRACE_BUILD_ID=y
+ CONFIG_DYNAMIC_DEBUG_CORE=y
+ CONFIG_DEBUG_INFO_DWARF5=y
+ CONFIG_DEBUG_INFO_COMPRESSED_ZSTD=y
+-CONFIG_DEBUG_INFO_BTF=y
++CONFIG_DEBUG_INFO_BTF=n
+ CONFIG_MODULE_ALLOW_BTF_MISMATCH=y
+ CONFIG_HEADERS_INSTALL=y
+ # CONFIG_SECTION_MISMATCH_WARN_ONLY is not set
+
+>>> device/nxp <<<
+diff --git a/imx8m/evk_8mp/BoardConfig.mk b/imx8m/evk_8mp/BoardConfig.mk
+index 4f2711dd..6fd13736 100644
+--- a/imx8m/evk_8mp/BoardConfig.mk
++++ b/imx8m/evk_8mp/BoardConfig.mk
+@@ -131,7 +131,7 @@ BOARD_KERNEL_BASE := 0x40400000
+ 
+ CMASIZE=1184M
+ # NXP default config
+-BOARD_KERNEL_CMDLINE := init=/init firmware_class.path=/vendor/firmware loop.max_part=7 bootconfig
++BOARD_KERNEL_CMDLINE := earlycon=ec_imx6q,0x30890000,115200 console=ttymxc1,115200 init=/init firmware_class.path=/vendor/firmware loop.max_part=7 bootconfig
+ BOARD_BOOTCONFIG += androidboot.console=ttymxc1 androidboot.hardware=nxp
+ 
+ # memory config
+
+
+=== Phase 2: Cross-repo HEAD Comparison ===
+(Compares committed HEAD of build tree vs clean repo)
+
+--- vendor/nxp-opensource/kernel_imx ---
+  Current HEAD: 112aa92f17622adb9a94c256e6a8a69a1fb03adc
+  Clean HEAD:   112aa92f17622adb9a94c256e6a8a69a1fb03adc
+  -> SAME HEAD (no committed differences)
+
+--- vendor/nxp-opensource/uboot-imx ---
+  Current HEAD: de16f4f17221b2ff72b8cb18c28cd8a29f3c2710
+  Clean HEAD:   de16f4f17221b2ff72b8cb18c28cd8a29f3c2710
+  -> SAME HEAD (no committed differences)
+
+--- vendor/nxp-opensource/arm-trusted-firmware ---
+  Current HEAD: 28affcae957cb8194917b5246276630f9e6343e1
+  Clean HEAD:   28affcae957cb8194917b5246276630f9e6343e1
+  -> SAME HEAD (no committed differences)
+
+--- vendor/nxp-opensource/imx-mkimage ---
+  Current HEAD: 4622115cbc037f79039c4522faeced4aabea986b
+  Clean HEAD:   4622115cbc037f79039c4522faeced4aabea986b
+  -> SAME HEAD (no committed differences)
+
+--- vendor/nxp-opensource/imx-gki ---
+  Current HEAD: b7de1dd800d02710653a9785632a1c0ce2944b34
+  Clean HEAD:   b7de1dd800d02710653a9785632a1c0ce2944b34
+  -> SAME HEAD (no committed differences)
+
+--- vendor/nxp-opensource/imx ---
+  Current HEAD: 7cff53e9e79ec72fb20db573d9ad2feb418d96e9
+  Clean HEAD:   7cff53e9e79ec72fb20db573d9ad2feb418d96e9
+  -> SAME HEAD (no committed differences)
+
+--- device/nxp ---
+  Current HEAD: 483e9dc46510aa0109bb5d0efe40392346271a3f
+  Clean HEAD:   483e9dc46510aa0109bb5d0efe40392346271a3f
+  -> SAME HEAD (no committed differences)
+
+========================================
+Summary
+========================================
+  Phase 1 (git dirty entries):    27
+  Phase 2 (committed diffs):      0
+========================================

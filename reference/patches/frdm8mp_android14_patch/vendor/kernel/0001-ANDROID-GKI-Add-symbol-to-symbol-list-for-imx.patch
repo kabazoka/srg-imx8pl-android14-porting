@@ -1,0 +1,74 @@
+From 32a68c6fb36bf09c7e9fb64af347e48d54a2a3ed Mon Sep 17 00:00:00 2001
+From: Zhipeng Wang <zhipeng.wang_1@nxp.com>
+Date: Mon, 9 Sep 2024 16:29:50 +0900
+Subject: [PATCH] ANDROID: GKI: Add symbol to symbol list for imx
+
+1 function symbol(s) added
+  'void devm_nvmem_device_put(struct device*, struct nvmem_device*)'
+
+Bug: 365423073
+Bug: 365651034
+Change-Id: I40d06c1b1fc7715425fb6dfec677e9aeb531d1f0
+Signed-off-by: Zhipeng Wang <zhipeng.wang_1@nxp.com>
+(cherry picked from commit bf54351c6c14b2fa92f7121428f645c0448e7028)
+---
+ android/abi_gki_aarch64.stg | 16 ++++++++++++++++
+ android/abi_gki_aarch64_imx |  1 +
+ 2 files changed, 17 insertions(+)
+
+diff --git a/android/abi_gki_aarch64.stg b/android/abi_gki_aarch64.stg
+index caae91358806..59f044b2e190 100644
+--- a/android/abi_gki_aarch64.stg
++++ b/android/abi_gki_aarch64.stg
+@@ -296717,6 +296717,12 @@ function {
+   parameter_id: 0xd0b3a203
+   parameter_id: 0xd0b3a203
+ }
++function {
++  id: 0x10e61e10
++  return_type_id: 0x48b5725f
++  parameter_id: 0x0258f96e
++  parameter_id: 0x3a1c763b
++}
+ function {
+   id: 0x10e93841
+   return_type_id: 0x48b5725f
+@@ -366476,6 +366482,15 @@ elf_symbol {
+   type_id: 0x9435d177
+   full_name: "devm_nvmem_device_get"
+ }
++elf_symbol {
++  id: 0xe504a070
++  name: "devm_nvmem_device_put"
++  is_defined: true
++  symbol_type: FUNCTION
++  crc: 0x53ca63ed
++  type_id: 0x10e61e10
++  full_name: "devm_nvmem_device_put"
++}
+ elf_symbol {
+   id: 0x47264dbb
+   name: "devm_nvmem_register"
+@@ -416597,6 +416612,7 @@ interface {
+   symbol_id: 0x91f58d29
+   symbol_id: 0x7abe395b
+   symbol_id: 0xa8b058e5
++  symbol_id: 0xe504a070
+   symbol_id: 0x47264dbb
+   symbol_id: 0x35094803
+   symbol_id: 0x5bc8c0f2
+diff --git a/android/abi_gki_aarch64_imx b/android/abi_gki_aarch64_imx
+index f87d336a0d5f..9acfa1379495 100644
+--- a/android/abi_gki_aarch64_imx
++++ b/android/abi_gki_aarch64_imx
+@@ -407,6 +407,7 @@
+   devm_mipi_dsi_attach
+   devm_mipi_dsi_device_register_full
+   devm_nvmem_device_get
++  devm_nvmem_device_put
+   devm_nvmem_register
+   devm_of_clk_add_hw_provider
+   devm_of_iomap
+-- 
+2.34.1
+
