@@ -69,8 +69,40 @@ FRDM patch 是基於 2.1.0 製作的，apply 到 2.2.0 後需要額外修正：
 
 | 問題 | 原因 | 修法 |
 |------|------|------|
-| `pwrseq_simple.ko` missing | 2.2.0 的 gki_defconfig 已 disable `CONFIG_PWRSEQ_SIMPLE`（2.1.0 時為 `=m`），但 FRDM 的 `SharedBoardConfig.mk` 仍列出此 module | 從 `frdm_8mp/SharedBoardConfig.mk` 移除 `pwrseq_simple.ko` 那行 |
+| `pwrseq_simple.ko` missing | 2.2.0 GKI defconfig 改為 `# CONFIG_PWRSEQ_SIMPLE is not set`，且 `imx8mp_gki.fragment` 未補上，導致模組不產出。但 FRDM DTS 仍有 `mmc-pwrseq-simple` 節點（IW612 WiFi SDIO 需要） | 在 `imx8mp_gki.fragment` 末尾加上 `CONFIG_PWRSEQ_SIMPLE=m`，保留 `SharedBoardConfig.mk` 中的 .ko |
 | `CONFIG_DEBUG_INFO_BTF` build 失敗 | host 的 pahole v1.25 與 Android clang 18 的 DWARF5 不相容 | `gki_defconfig` 改為 `CONFIG_DEBUG_INFO_BTF=n`（或升級 pahole >= 1.26） |
+
+#### pwrseq_simple 背景說明
+
+`pwrseq_simple` 是 Linux MMC 子系統的 power sequence 驅動（`drivers/mmc/core/pwrseq_simple.c`），用於在 SDIO 裝置 probe 前透過 GPIO 完成 reset 時序。FRDM 板的 IW612 WiFi 透過 SDIO 連接，DTS 中定義了完整的上電流程：
+
+```
+reg_usdhc1_vmmc (regulator-fixed)     → WLAN_EN 供電（20ms startup delay）
+usdhc1_pwrseq (mmc-pwrseq-simple)     → GPIO2_IO10 reset 時序
+&usdhc1: vmmc-supply + mmc-pwrseq     → 兩者綁定到 SDIO controller
+```
+
+2.1.0 的 `gki_defconfig` 直接包含 `CONFIG_PWRSEQ_SIMPLE=m`，2.2.0 時 Google GKI 升級把它關閉了，NXP 的 `imx8mp_gki.fragment` 未同步補上，造成模組缺失。注意：EVK 基本設定不使用此機制（EVK DTS 無 `mmc-pwrseq-simple` 節點），只有 FRDM 和 EVK+M.2 WiFi overlay 才需要。
+
+新的 generic power sequencing 子系統（`drivers/power/sequencing/`，Linux 6.11+）在此 kernel (5.15) 中不存在，`pwrseq_simple` 並未被取代。
+
+### 修正檔案（手動加入）：
+
+**1.** `vendor/nxp-opensource/kernel_imx/arch/arm64/configs/imx8mp_gki.fragment` — 末尾加入：
+```
+# Power sequence (wifi)
+CONFIG_PWRSEQ_SIMPLE=m
+```
+
+**2.** `device/nxp/imx8m/frdm_8mp/SharedBoardConfig.mk` — 保留既有的（不需改動）：
+```
+$(KERNEL_OUT)/drivers/mmc/core/pwrseq_simple.ko \
+```
+
+**3.** `vendor/nxp-opensource/kernel_imx/arch/arm64/configs/gki_defconfig` — 已改為（BTF 修正）：
+```
+CONFIG_DEBUG_INFO_BTF=n
+```
 
 ### Apply 結果（2026-03-03 確認）
 
@@ -107,6 +139,8 @@ ls -lh boot.img boot-imx.img
 # 設定 FRDM 板 SW5 boot mode = 0001（serial download mode）
 # USB cable 連接 PORT1 到 PC
 sudo ./uuu_imx_android_flash.sh -f imx8mp -p frdm -a -e
+# 或是 sd card
+sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
 ```
 
 Flash 完成後，將 SW5 boot mode 改為 `0010`（eMMC boot）再開機。
