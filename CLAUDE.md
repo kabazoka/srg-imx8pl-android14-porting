@@ -1,5 +1,10 @@
 # SRG-iMX8PL Android 14 Porting
 
+## Language
+
+- All conversations with Claude and README files should be in **Traditional Chinese (zh-tw)**. Technical terms remain in English.
+- Documents (code, comments, docstrings) and git commands should be in **English**.
+
 ## Project Overview
 Porting Android 14 (NXP BSP imx-android-14.0.0_2.2.0) to the SRG-iMX8PL custom board based on i.MX8M Plus.
 
