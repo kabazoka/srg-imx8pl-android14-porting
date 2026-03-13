@@ -28,6 +28,8 @@
   atomic_notifier_call_chain
   atomic_notifier_chain_register
   atomic_notifier_chain_unregister
+  _bcd2bin
+  _bin2bcd
   backlight_device_register
   backlight_device_unregister
   bcmp

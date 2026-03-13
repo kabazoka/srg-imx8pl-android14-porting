@@ -82,6 +82,7 @@ BOARD_VENDOR_KERNEL_MODULES += \
     $(KERNEL_OUT)/sound/soc/sof/imx/imx-common.ko \
     $(KERNEL_OUT)/sound/soc/sof/imx/snd-sof-imx8m.ko \
     $(KERNEL_OUT)/drivers/rtc/rtc-snvs.ko \
+    $(KERNEL_OUT)/drivers/rtc/rtc-pcf85063.ko \
     $(KERNEL_OUT)/drivers/pci/controller/dwc/pci-imx6.ko \
     $(KERNEL_OUT)/drivers/net/phy/realtek.ko \
     $(KERNEL_OUT)/drivers/pps/pps_core.ko \

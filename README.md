@@ -67,6 +67,164 @@ done
 
 ---
 
+## Build & Flash Workflow
+
+### Environment Setup
+```bash
+cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
+export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
+export CLANG_PATH=$(pwd)/prebuilts/clang/host/linux-x86
+export _JAVA_OPTIONS="-Xmx16g"
+source build/envsetup.sh
+lunch evk_8mp-trunk_staging-userdebug
+```
+
+### Build Components
+
+| 指令 | 做什麼 | 產出 |
+|------|--------|------|
+| `./imx-make.sh  -j$(nproc)` | 編譯全部 | |
+| `./imx-make.sh bootloader -j$(nproc)` | 編譯 SPL + ATF + U-Boot（7 個 variant） | `u-boot-imx8mp.imx` |
+| `./imx-make.sh bootimage -j$(nproc)` | 編譯 kernel + 打包 boot.img | `boot.img` |
+| `./imx-make.sh vendorbootimage -j$(nproc)` | 編譯 modules + DTB + 打包 vendor_boot.img | `vendor_boot.img` |
+| `./imx-make.sh -c bootimage -j$(nproc)` | **先 `make clean`** 再編譯（強制重新編譯） | `boot.img` |
+
+> **WARNING**: `imx-mkimage/iMX8M/flash.bin` = 最後一個 variant = **UUU**（沒有 `boota`！）
+> 正確的 U-Boot image: `out/.../obj/UBOOT_COLLECTION/u-boot-imx8mp.imx`
+
+> **WARNING: GKI boot.img 陷阱（切回 EVK 時務必注意）**
+> NXP 原版 `imx-make.sh` 預設 `ENABLE_GKI=1`（Line 83: `enable_gki=${ENABLE_GKI:-1}`）。
+> 當 `enable_gki=1` 時，`./imx-make.sh bootimage` 會：
+> 1. 先用 **imx kernel** build `boot.img`
+> 2. 把它改名為 `boot-imx.img`
+> 3. 再用 **GKI kernel**（Google 通用版，35MB）重新 build `boot.img`
+>
+> 結果：`boot.img` = GKI kernel（缺少 i.MX8MP driver），`boot-imx.img` = imx kernel（正確的）。
+> 如果燒 `boot.img` → kernel 在 "Starting kernel ..." 後直接 panic reboot。
+>
+> **SRG modified 版本**已改為 `ENABLE_GKI=0`（修改 #7），不會有此問題。
+> **切回 EVK 原版時**，必須用 `ENABLE_GKI=0 ./imx-make.sh bootimage -j$(nproc)`，
+> 或者 flash 時用 `boot-imx.img` 而非 `boot.img`。
+
+### Image Content Summary
+
+| Image | Contains | SD Card Partition |
+|-------|----------|-------------------|
+| `boot.img` | Kernel binary (`Image.gz`) | `/dev/sdc3` |
+| `vendor_boot.img` | cmdline + kernel modules (`.ko`) + DTB + vendor ramdisk | `/dev/sdc7` |
+| `u-boot-imx8mp.imx` | SPL + ATF + U-Boot | `/dev/sdc` (seek=32k) |
+
+> **CRITICAL**: Kernel modules 和 DTB 都在 `vendor_boot.img` 裡，**不是** `boot.img`！
+> - `boot.img` 只有 kernel binary
+> - cmdline 也在 `vendor_boot.img`（因為 `BOARD_BOOT_HEADER_VERSION=4` + `TARGET_USE_VENDOR_BOOT=true`）
+> - 改了任何 kernel source → 必須 rebuild **兩個** image 再 flash
+
+### Incremental Build 的陷阱
+
+NXP build system 用 make 的 incremental build（`.cmd` 檔 + timestamp）偵測源碼變更。
+**已知問題：有時改了 .dts 或 .c 檔後 make 不會重新編譯！**
+
+**症狀：** build 成功但 flash 後行為沒改變（DTB/Image 的 timestamp 是幾天前的）
+
+**解法：用 `-c` flag 強制 clean build**
+```bash
+# 推薦方式：-c = make clean + 重新編譯（保證所有改動都編譯進去）
+./imx-make.sh -c bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
+```
+
+**Build 後驗證（flash 前必做）：**
+```bash
+# 確認 DTB 和 Image 時間戳是「剛剛」
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/dts/freescale/imx8mp-evk.dtb
+ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/Image*
+
+# 確認 .config 關鍵設定
+grep CONFIG_SOC_IMX8M= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+grep CONFIG_IMX8M_BUSFREQ= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+grep CONFIG_SERIAL_IMX= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
+# 三個都應該是 =y
+```
+
+### Force Module Rebuild（針對單一模組的替代方案）
+如果只改了一個 .c 檔，可以不用 `-c` clean，改為手動刪除該模組的 cache：
+```bash
+# 以 clk-imx8mp.ko 為例
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.mod*
+rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/.clk-imx8mp*.cmd
+# 也刪除 vendor_ramdisk 和 packaging 中的 cache
+rm -f out/target/product/evk_8mp/vendor_ramdisk/lib/modules/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_VENDOR_RAMDISK_intermediates/lib/modules/0.0/lib/modules/clk-imx8mp.ko
+rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_vendor_ramdisk_stripped_intermediates/clk-imx8mp.ko
+
+# 然後 rebuild（不需 -c）
+./imx-make.sh bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
+```
+
+### Flash to eMMC（UUU）
+
+> **注意：UUU 燒錄的所有 image 必須來自同一次 build！**
+> 如果 `super.img`（2月27）和 `vbmeta`（3月2）時間戳不同，dm-verity 會判定 system partition corrupted → reboot loop。
+> 燒之前先確認：`ls -lh out/target/product/evk_8mp/{super.img,vbmeta-imx8mp.img,boot.img,vendor_boot.img}`
+
+```bash
+cd out/target/product/evk_8mp
+
+# GKI 陷阱：clean imx-make.sh 預設 ENABLE_GKI=1，boot.img 會是 GKI kernel（35MB）
+# imx kernel 被改名為 boot-imx.img（14MB）。燒之前務必確認：
+ls -lh boot.img boot-imx.img
+# 如果 boot.img 是 35MB → 先覆蓋：
+cp boot-imx.img boot.img
+
+# 燒 eMMC（EVK 用 USB-C 連接 PC，撥到 download mode）
+sudo ./uuu_imx_android_flash.sh -f imx8mp -e
+```
+
+### Flash to SD Card
+
+```bash
+# 全部重新 flash（partition + system）
+cd out/target/product/evk_8mp
+sudo ./imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
+# 注意：full flash 後 ALWAYS 手動 dd boot.img + vendor_boot.img（flash script 可能不會寫入）
+sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
+sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
+sync
+```
+
+### A/B Metadata 重置（如果 boot 失敗 7 次後無法開機）
+
+**症狀：** U-Boot 報 `get_curr_slot()=-1` 或 `boot header version not supported`
+
+**原因：** misc partition（`/dev/sdc9`）offset 2048 的 `bootloader_control` struct，`tries_remaining` 每次失敗 -1，降到 0 後兩個 slot 都不可開機。
+
+```bash
+sudo python3 -c "
+import struct, zlib
+slot=bytes([0x7F,0x00])  # priority=127, tries_remaining=0 (successful)
+data=(b'_a\x00\x00'      # slot_suffix='_a'
+     +struct.pack('<I',0x42414342)  # magic='BACB'
+     +bytes([1,2])        # version=1, nb_slot=2
+     +b'\x00\x00'         # recovery_tries_remaining=0, merge_status=0
+     +slot+slot            # slot_info[0], slot_info[1]
+     +b'\x00'*4           # reserved0
+     +b'\x00'*8)          # reserved1
+full=data+struct.pack('<I',zlib.crc32(data)&0xFFFFFFFF)  # append CRC32
+f=open('/dev/sdc9','r+b'); f.seek(2048); f.write(full); f.flush()
+print('OK:', full.hex())
+" && sync
+```
+
+### Copy Build Artifacts（備份）
+```bash
+# Build artifacts are now stored at /mnt/data/unmodified_source/flash-images/
+cp /mnt/data/imx-android-14.0.0_2.2.0/android_build/out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx \
+   /mnt/data/unmodified_source/flash-images/srg/u-boot-imx8mp.imx
+```
+
+---
+
 ## Complete Modification Audit
 
 All changes to the Android build tree vs unmodified NXP source (18 modifications across 5 repos):
@@ -96,8 +254,8 @@ All changes to the Android build tree vs unmodified NXP source (18 modifications
 | 9 | `arch/arm64/boot/dts/freescale/imx8mp-evk.dts` | UART4 + USB host + RTC + regulators + DMA delete-property | ✅ Correct |
 | 10 | `arch/arm64/configs/gki_defconfig` | CONFIG_DEBUG_INFO_BTF=y→n | ✅ Build fix |
 | 14 | `drivers/clk/imx/clk-imx8mp.c` | uart4 clock → `_critical` (prevent gate disable) | ✅ Boot hang fix |
-| 16 | `arch/arm64/configs/imx8mp_gki.fragment` | SOC_IMX8M=m→y, SERIAL_IMX=m→y, SERIAL_IMX_CONSOLE=m→y, BUSFREQ=m→y | ✅ Console + busfreq built-in |
-| 18 | `android/abi_gki_aarch64_imx` | Added `request_bus_freq`, `release_bus_freq`, `get_bus_freq_mode` to GKI allowlist | ✅ Protected symbol fix |
+| 16 | `arch/arm64/configs/imx8mp_gki.fragment` | SOC_IMX8M=m→y, SERIAL_IMX=m→y, SERIAL_IMX_CONSOLE=m→y, BUSFREQ=m→y, **RTC_DRV_PCF85063=m** | ✅ Console + busfreq built-in + RTC driver |
+| 18 | `android/abi_gki_aarch64_imx` | Added `request_bus_freq`, `release_bus_freq`, `get_bus_freq_mode`, **`_bcd2bin`**, **`_bin2bcd`** to GKI allowlist | ✅ Protected symbol fix |
 
 ### Repo 4: `vendor/nxp-opensource/imx-mkimage/` (1 file)
 
@@ -117,7 +275,7 @@ All changes to the Android build tree vs unmodified NXP source (18 modifications
 |---|------|--------|--------|
 | 13 | `imx8m/evk_8mp/BoardConfig.mk:134-135` | `keep_bootcon initcall_debug` + `androidboot.console=ttymxc3` | ✅ Fixed |
 | 15 | `imx8m/evk_8mp/BoardConfig.mk:134` | Added `console=ttymxc3,115200` to kernel cmdline | ✅ Console input fix |
-| 17 | `imx8m/evk_8mp/SharedBoardConfig.mk` | Removed `soc-imx8m.ko` + `busfreq-imx8mq.ko` + `imx.ko` from module list (now built-in) | ✅ Linker fix |
+| 17 | `imx8m/evk_8mp/SharedBoardConfig.mk` | Removed `soc-imx8m.ko` + `busfreq-imx8mq.ko` + `imx.ko` (built-in); **Added `rtc-pcf85063.ko`** | ✅ Linker fix + RTC module |
 
 ---
 
@@ -250,174 +408,6 @@ earlycon: ec_imx6q0 at MMIO 0x30a60000         ✅ UART4 earlycon
 keep_bootcon + initcall_debug in cmdline        ✅ Debug flags active
 init: init first stage started!                 ✅ Android init running
 init: Loading module mxc-clk.ko                 ✅ Module loading in progress
-```
-
----
-
-## Build & Flash Workflow
-
-### Environment Setup
-```bash
-cd /mnt/data/imx-android-14.0.0_2.2.0/android_build
-export AARCH64_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
-export AARCH32_GCC_CROSS_COMPILE=/opt/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-
-export CLANG_PATH=$(pwd)/prebuilts/clang/host/linux-x86
-export _JAVA_OPTIONS="-Xmx16g"
-source build/envsetup.sh
-lunch evk_8mp-trunk_staging-userdebug
-```
-
-### Build Components
-
-| 指令 | 做什麼 | 產出 |
-|------|--------|------|
-| `./imx-make.sh bootloader -j$(nproc)` | 編譯 SPL + ATF + U-Boot（7 個 variant） | `u-boot-imx8mp.imx` |
-| `./imx-make.sh bootimage -j$(nproc)` | 編譯 kernel + 打包 boot.img | `boot.img` |
-| `./imx-make.sh vendorbootimage -j$(nproc)` | 編譯 modules + DTB + 打包 vendor_boot.img | `vendor_boot.img` |
-| `./imx-make.sh -c bootimage -j$(nproc)` | **先 `make clean`** 再編譯（強制重新編譯） | `boot.img` |
-
-> **WARNING**: `imx-mkimage/iMX8M/flash.bin` = 最後一個 variant = **UUU**（沒有 `boota`！）
-> 正確的 U-Boot image: `out/.../obj/UBOOT_COLLECTION/u-boot-imx8mp.imx`
-
-> **WARNING: GKI boot.img 陷阱（切回 EVK 時務必注意）**
-> NXP 原版 `imx-make.sh` 預設 `ENABLE_GKI=1`（Line 83: `enable_gki=${ENABLE_GKI:-1}`）。
-> 當 `enable_gki=1` 時，`./imx-make.sh bootimage` 會：
-> 1. 先用 **imx kernel** build `boot.img`
-> 2. 把它改名為 `boot-imx.img`
-> 3. 再用 **GKI kernel**（Google 通用版，35MB）重新 build `boot.img`
->
-> 結果：`boot.img` = GKI kernel（缺少 i.MX8MP driver），`boot-imx.img` = imx kernel（正確的）。
-> 如果燒 `boot.img` → kernel 在 "Starting kernel ..." 後直接 panic reboot。
->
-> **SRG modified 版本**已改為 `ENABLE_GKI=0`（修改 #7），不會有此問題。
-> **切回 EVK 原版時**，必須用 `ENABLE_GKI=0 ./imx-make.sh bootimage -j$(nproc)`，
-> 或者 flash 時用 `boot-imx.img` 而非 `boot.img`。
-
-### Image Content Summary
-
-| Image | Contains | SD Card Partition |
-|-------|----------|-------------------|
-| `boot.img` | Kernel binary (`Image.gz`) | `/dev/sdc3` |
-| `vendor_boot.img` | cmdline + kernel modules (`.ko`) + DTB + vendor ramdisk | `/dev/sdc7` |
-| `u-boot-imx8mp.imx` | SPL + ATF + U-Boot | `/dev/sdc` (seek=32k) |
-
-> **CRITICAL**: Kernel modules 和 DTB 都在 `vendor_boot.img` 裡，**不是** `boot.img`！
-> - `boot.img` 只有 kernel binary
-> - cmdline 也在 `vendor_boot.img`（因為 `BOARD_BOOT_HEADER_VERSION=4` + `TARGET_USE_VENDOR_BOOT=true`）
-> - 改了任何 kernel source → 必須 rebuild **兩個** image 再 flash
-
-### Incremental Build 的陷阱
-
-NXP build system 用 make 的 incremental build（`.cmd` 檔 + timestamp）偵測源碼變更。
-**已知問題：有時改了 .dts 或 .c 檔後 make 不會重新編譯！**
-
-**症狀：** build 成功但 flash 後行為沒改變（DTB/Image 的 timestamp 是幾天前的）
-
-**解法：用 `-c` flag 強制 clean build**
-```bash
-# 推薦方式：-c = make clean + 重新編譯（保證所有改動都編譯進去）
-./imx-make.sh -c bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
-```
-
-**Build 後驗證（flash 前必做）：**
-```bash
-# 確認 DTB 和 Image 時間戳是「剛剛」
-ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/dts/freescale/imx8mp-evk.dtb
-ls -la out/target/product/evk_8mp/obj/KERNEL_OBJ/arch/arm64/boot/Image*
-
-# 確認 .config 關鍵設定
-grep CONFIG_SOC_IMX8M= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
-grep CONFIG_IMX8M_BUSFREQ= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
-grep CONFIG_SERIAL_IMX= out/target/product/evk_8mp/obj/KERNEL_OBJ/.config
-# 三個都應該是 =y
-```
-
-### Force Module Rebuild（針對單一模組的替代方案）
-如果只改了一個 .c 檔，可以不用 `-c` clean，改為手動刪除該模組的 cache：
-```bash
-# 以 clk-imx8mp.ko 為例
-rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.ko
-rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/clk-imx8mp.mod*
-rm -f out/target/product/evk_8mp/obj/KERNEL_OBJ/drivers/clk/imx/.clk-imx8mp*.cmd
-# 也刪除 vendor_ramdisk 和 packaging 中的 cache
-rm -f out/target/product/evk_8mp/vendor_ramdisk/lib/modules/clk-imx8mp.ko
-rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_VENDOR_RAMDISK_intermediates/lib/modules/0.0/lib/modules/clk-imx8mp.ko
-rm -f out/target/product/evk_8mp/obj/PACKAGING/depmod_vendor_ramdisk_stripped_intermediates/clk-imx8mp.ko
-
-# 然後 rebuild（不需 -c）
-./imx-make.sh bootimage -j$(nproc) && ./imx-make.sh vendorbootimage -j$(nproc)
-```
-
-### Flash to eMMC（UUU）
-
-> **注意：UUU 燒錄的所有 image 必須來自同一次 build！**
-> 如果 `super.img`（2月27）和 `vbmeta`（3月2）時間戳不同，dm-verity 會判定 system partition corrupted → reboot loop。
-> 燒之前先確認：`ls -lh out/target/product/evk_8mp/{super.img,vbmeta-imx8mp.img,boot.img,vendor_boot.img}`
-
-```bash
-cd out/target/product/evk_8mp
-
-# GKI 陷阱：clean imx-make.sh 預設 ENABLE_GKI=1，boot.img 會是 GKI kernel（35MB）
-# imx kernel 被改名為 boot-imx.img（14MB）。燒之前務必確認：
-ls -lh boot.img boot-imx.img
-# 如果 boot.img 是 35MB → 先覆蓋：
-cp boot-imx.img boot.img
-
-# 燒 eMMC（EVK 用 USB-C 連接 PC，撥到 download mode）
-sudo ./uuu_imx_android_flash.sh -f imx8mp -e
-```
-
-### Flash to SD Card
-
-```bash
-# === 方式 A：只更新 kernel（最常用） ===
-sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
-sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
-sync
-
-# === 方式 B：也更新 U-Boot ===
-sudo dd if=out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx of=/dev/sdc bs=1k seek=32 conv=fsync,nocreat
-sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
-sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
-sync
-
-# === 方式 C：全部重新 flash（partition + system） ===
-cd /mnt/data/unmodified_source/flash-images/srg
-sudo ~/srg-imx8pl-android14-porting/reference/scripts/imx-sdcard-partition.sh -f imx8mp -a -D . /dev/sdX
-# 注意：full flash 後 ALWAYS 手動 dd boot.img + vendor_boot.img（flash script 可能不會寫入）
-sudo dd if=out/target/product/evk_8mp/boot.img of=/dev/sdc3 bs=10M conv=fsync,nocreat
-sudo dd if=out/target/product/evk_8mp/vendor_boot.img of=/dev/sdc7 bs=10M conv=fsync,nocreat
-sync
-```
-
-### A/B Metadata 重置（如果 boot 失敗 7 次後無法開機）
-
-**症狀：** U-Boot 報 `get_curr_slot()=-1` 或 `boot header version not supported`
-
-**原因：** misc partition（`/dev/sdc9`）offset 2048 的 `bootloader_control` struct，`tries_remaining` 每次失敗 -1，降到 0 後兩個 slot 都不可開機。
-
-```bash
-sudo python3 -c "
-import struct, zlib
-slot=bytes([0x7F,0x00])  # priority=127, tries_remaining=0 (successful)
-data=(b'_a\x00\x00'      # slot_suffix='_a'
-     +struct.pack('<I',0x42414342)  # magic='BACB'
-     +bytes([1,2])        # version=1, nb_slot=2
-     +b'\x00\x00'         # recovery_tries_remaining=0, merge_status=0
-     +slot+slot            # slot_info[0], slot_info[1]
-     +b'\x00'*4           # reserved0
-     +b'\x00'*8)          # reserved1
-full=data+struct.pack('<I',zlib.crc32(data)&0xFFFFFFFF)  # append CRC32
-f=open('/dev/sdc9','r+b'); f.seek(2048); f.write(full); f.flush()
-print('OK:', full.hex())
-" && sync
-```
-
-### Copy Build Artifacts（備份）
-```bash
-# Build artifacts are now stored at /mnt/data/unmodified_source/flash-images/
-cp /mnt/data/imx-android-14.0.0_2.2.0/android_build/out/target/product/evk_8mp/obj/UBOOT_COLLECTION/u-boot-imx8mp.imx \
-   /mnt/data/unmodified_source/flash-images/srg/u-boot-imx8mp.imx
 ```
 
 ---
@@ -672,6 +662,54 @@ evk_8mp:/ # uname -r
 
 ---
 
+## Task 12: PCF85063 External RTC — Driver Enable (2026-03-13)
+
+### Problem
+DTS 已定義 PCF85063ATL RTC @ I2C3 0x51（Task 2），`i2cdetect` 可偵測到裝置，但 `/dev/rtc1` 不存在，`dmesg` 無 pcf85063 相關訊息。
+
+### Root Cause (3 issues)
+
+1. **`CONFIG_RTC_DRV_PCF85063` 未啟用**
+   - `imx8mp_gki.fragment` 只有 `CONFIG_RTC_DRV_SNVS=m`，缺少 PCF85063 driver config
+   - Driver source (`rtc-pcf85063.c`) 存在但未編譯
+
+2. **`rtc-pcf85063.ko` 未加入 module list**
+   - `SharedBoardConfig.mk` 的 `BOARD_VENDOR_KERNEL_MODULES` 沒有列出 `rtc-pcf85063.ko`
+   - `.ko` 不會被打包進 `super.img`（`/vendor/lib/modules/`）
+
+3. **GKI Protected Symbol: `_bcd2bin`, `_bin2bcd`**
+   - `rtc-pcf85063.ko` 使用 BCD 轉換函數，這些 symbol 在 vmlinux 中
+   - 未列入 `abi_gki_aarch64_imx` allowlist → `insmod` 失敗 `-EACCES (err -13)`
+
+### Fix (3 files)
+
+1. **`imx8mp_gki.fragment`** — 加入 `CONFIG_RTC_DRV_PCF85063=m`
+2. **`SharedBoardConfig.mk`** — 加入 `$(KERNEL_OUT)/drivers/rtc/rtc-pcf85063.ko`
+3. **`abi_gki_aarch64_imx`** — 加入 `_bcd2bin`, `_bin2bcd` 到 GKI symbol allowlist
+
+### 驗證結果 (2026-03-13) — ✅ Confirmed
+```
+evk_8mp:/ # lsmod | grep pcf
+rtc_pcf85063           24576  0
+
+evk_8mp:/ # ls /dev/rtc*
+/dev/rtc0  /dev/rtc1
+
+evk_8mp:/ # cat /sys/class/rtc/rtc1/device/uevent
+DRIVER=rtc-pcf85063
+OF_NAME=rtc
+OF_FULLNAME=/soc@0/bus@30800000/i2c@30a40000/rtc@51
+OF_COMPATIBLE_0=nxp,pcf85063a
+
+evk_8mp:/ # hwclock -f /dev/rtc1 -r
+2026-03-13 14:35:29+0000
+```
+- `/dev/rtc0` = SNVS (SoC 內建), `/dev/rtc1` = PCF85063ATL (外部) ✅
+- `i2cdetect -y 2` 偵測到 0x51 ✅
+- `hwclock` 可正確讀取時間 ✅
+
+---
+
 ## Task 9: Build Not Taking Effect — Stale DTB/Image (2026-02-23)
 
 ### Problem
@@ -905,7 +943,7 @@ sudo ./uuu_imx_android_flash.sh -f imx8mp -p frdm -a -e
 ---
 
 ### 未驗證 / 未來工作
-- [ ] USB 滑鼠/鍵盤（DTS 已修正 VBUS 極性，待實機驗證）
+- [x] USB 滑鼠/鍵盤（2026-03-13 驗證通過，USB mouse 可操作 Android UI）
 - [ ] ADB over USB
 - [ ] WiFi（8852BE driver — 需 GKI symbol list 更新 + PCIe patch）
 - [ ] Bluetooth（rtk_btusb.ko）

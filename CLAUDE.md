@@ -71,12 +71,13 @@ sudo ~/srg-imx8pl-android14-porting/reference/scripts/imx-sdcard-partition.sh -f
 
 ## Current Status
 - [x] RTC (PCF85063) added to device tree
+- [x] **RTC (PCF85063) driver verified** — `/dev/rtc1`, `hwclock` working
 - [x] Dual-platform config (EVK/SRG) created
 - [x] **DDR Timing Resolved** (Official patch applied)
 - [x] SRG images built and ready in `flash-images/srg/`
 - [x] **Bootloader TEE/UART4 Fixed** (No-TEE build, UART4 console)
-- [ ] Flash and boot test on SRG hardware
-- [ ] Verify USB functionality
+- [x] **Flash and boot test on SRG hardware** (4GB board, Android boots with HDMI)
+- [x] **USB functionality verified** (USB mouse works)
 
 ## Known Issues
 
